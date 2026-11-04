@@ -5,6 +5,7 @@
 
 mod issue;
 mod main_screen;
+mod picker;
 mod pr;
 pub mod ui;
 
@@ -36,6 +37,9 @@ pub enum Msg {
     Pr(Key, Result<PrDetail>),
     Files(Key, Result<(Vec<ChangedFile>, std::collections::HashMap<String, bool>)>),
     Fetched(Key, Result<()>),
+    /// All paths at the PR head.
+    Tree(Key, Result<Vec<String>>),
+    FileText(Key, String, Result<String>),
     Mutated(Key, Mutation, Result<()>),
 }
 

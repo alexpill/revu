@@ -1,6 +1,6 @@
 //! "Files changed": file list + diff with inline review threads.
 
-use super::conversation;
+use super::{Outcome, conversation};
 use crate::app::ui::{self, DIM, SELECTED};
 use crate::app::{Ctx, Key};
 use crate::diff::{self, DiffLine, Kind};
@@ -72,16 +72,6 @@ pub enum Row {
     Note(Line<'static>),
 }
 
-/// What the PR screen should do after a key press.
-pub enum Outcome {
-    Handled,
-    Unhandled,
-    /// Language-server request at a position of the PR head: (path, 0-based line, display column).
-    Definition(String, u32, usize),
-    References(String, u32, usize),
-    Hover(String, u32, usize),
-}
-
 pub struct FilesView {
     pub files: Vec<FileEntry>,
     pub sel: usize,
@@ -130,6 +120,18 @@ impl FilesView {
         self.files.iter().filter(|f| f.viewed).count()
     }
 
+    /// (file, row, column), for the jump list.
+    pub fn position(&self) -> (usize, usize, usize) {
+        (self.sel, self.cursor, self.col)
+    }
+
+    pub fn set_position(&mut self, (sel, cursor, col): (usize, usize, usize)) {
+        self.select(sel);
+        self.cursor = cursor;
+        self.col = col;
+        self.focus_diff = true;
+    }
+
     fn select(&mut self, i: usize) {
         self.sel = i.min(self.files.len().saturating_sub(1));
         self.cursor = 0;
@@ -173,29 +175,6 @@ impl FilesView {
             self.cursor = r;
             self.scroll = r; // hunk header at the top of the view
         }
-    }
-
-    fn word_motion(&mut self, forward: bool) {
-        let chars = self.line_chars();
-        let word = |c: char| c.is_alphanumeric() || c == '_';
-        let mut c = self.col.min(chars.len());
-        if forward {
-            while c < chars.len() && word(chars[c]) {
-                c += 1;
-            }
-            while c < chars.len() && !word(chars[c]) {
-                c += 1;
-            }
-        } else {
-            c = c.saturating_sub(1);
-            while c > 0 && !word(chars[c]) {
-                c -= 1;
-            }
-            while c > 0 && word(chars[c - 1]) {
-                c -= 1;
-            }
-        }
-        self.col = c.min(chars.len().saturating_sub(1));
     }
 
     /// Position for language-server requests: only lines that exist on the PR head.
@@ -244,8 +223,8 @@ impl FilesView {
             KeyCode::Char('u') if ctrl => self.move_cursor(-(self.height as isize) / 2),
             KeyCode::Char('h') | KeyCode::Left => self.col = self.col.saturating_sub(1),
             KeyCode::Char('l') | KeyCode::Right => self.col = (self.col + 1).min(self.line_chars().len().saturating_sub(1)),
-            KeyCode::Char('w') => self.word_motion(true),
-            KeyCode::Char('b') => self.word_motion(false),
+            KeyCode::Char('w') => self.col = word_motion(&self.line_chars(), self.col, true),
+            KeyCode::Char('b') => self.col = word_motion(&self.line_chars(), self.col, false),
             KeyCode::Char('0') => self.col = 0,
             KeyCode::Char('$') => self.col = self.line_chars().len().saturating_sub(1),
             KeyCode::Char('g') => self.pending_g = true,
@@ -482,6 +461,29 @@ fn diff_line(l: &DiffLine, code: &StyledLine, cursor: Option<usize>) -> Line<'st
         Some(bg) => line.bg(bg),
         None => line,
     }
+}
+
+/// Next/previous word start from `col`, vim `w`/`b` style.
+pub fn word_motion(chars: &[char], col: usize, forward: bool) -> usize {
+    let word = |c: char| c.is_alphanumeric() || c == '_';
+    let mut c = col.min(chars.len());
+    if forward {
+        while c < chars.len() && word(chars[c]) {
+            c += 1;
+        }
+        while c < chars.len() && !word(chars[c]) {
+            c += 1;
+        }
+    } else {
+        c = c.saturating_sub(1);
+        while c > 0 && !word(chars[c]) {
+            c -= 1;
+        }
+        while c > 0 && word(chars[c - 1]) {
+            c -= 1;
+        }
+    }
+    c.min(chars.len().saturating_sub(1))
 }
 
 /// Reverses the cell at display column `col`.
