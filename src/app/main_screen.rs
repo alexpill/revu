@@ -368,7 +368,7 @@ impl MainScreen {
 
         if ctx.cfg.repos.is_empty() {
             let msg = format!(
-                " no repos configured: add [[repos]] to {}",
+                " no repos: run `revu .` in a clone, `revu --repo owner/name`, or add [[repos]] to {}",
                 crate::config::config_path().display()
             );
             return f.render_widget(Paragraph::new(msg).yellow(), body);

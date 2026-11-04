@@ -51,6 +51,25 @@ Either way, `revu` needs `gh` (logged in with `gh auth login`) and `git` in
 The first `nix run` on a machine builds `revu` from source, which downloads a
 Rust toolchain; a binary cache is on the [roadmap](ROADMAP.md).
 
+## Usage
+
+```sh
+revu                                   # repos from the config file (or the current clone)
+revu .                                 # just the repo you're in
+revu ~/code/api ~/code/web             # several local clones
+revu --repo owner/name --repo git@github.com:owner/other.git
+```
+
+`REPO` (positional or `--repo`, repeatable) is a local directory, `owner/name`
+or a GitHub URL (https or ssh). Repos given on the command line replace the
+configured ones, so no config file is needed. A local directory gives the
+same benefits as a configured `path` (see below); for a fork, the `upstream`
+remote wins over `origin`. `--repo owner/name` keeps the `path` the config
+file has for that repo, if any.
+
+Other options: `--config <FILE>` to use another config file, `--theme <NAME>`
+to override the theme, `--help`, `--version`.
+
 ## Configuration
 
 `$XDG_CONFIG_HOME/revu/config.toml` (usually `~/.config/revu/config.toml`):
@@ -70,8 +89,8 @@ ts = ["typescript-language-server", "--stdio"]
 nix = ["nixd"]
 ```
 
-Without any `[[repos]]`, `revu` uses the GitHub repository of the current
-directory.
+Without any `[[repos]]` (and no repo on the command line), `revu` uses the
+GitHub repository of the current directory.
 
 Giving a repo a local `path` enables:
 
