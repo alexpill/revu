@@ -394,7 +394,7 @@ impl MainScreen {
             .map(|(i, cfg)| {
                 let r = match &self.prs[i] {
                     None => return Row::new([format!("{} {}", i + 2, cfg.name), "…".into()]).style(DIM),
-                    Some(Err(e)) => return Row::new([format!("{} {}", i + 2, cfg.name), e.clone()]).red(),
+                    Some(Err(e)) => return Row::new([format!("{} {}  {e}", i + 2, cfg.name)]).red(),
                     Some(Ok(r)) => r,
                 };
                 let count = |f: Filter| r.nodes.iter().filter(|p| f.keep(p, me)).count();
