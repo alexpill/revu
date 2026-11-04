@@ -5,6 +5,8 @@
 //! name = "owner/repo"
 //! path = "~/code/repo"   # optional local clone: enables local diff/file reads and LSP
 //!
+//! theme = "Catppuccin Mocha"   # optional, any bat theme
+//!
 //! [lsp]                   # file extension -> server command (overrides the defaults)
 //! rs = ["rust-analyzer"]
 //! ```
@@ -21,6 +23,8 @@ pub struct Config {
     pub repos: Vec<RepoConfig>,
     #[serde(default)]
     pub lsp: HashMap<String, Vec<String>>,
+    /// bat theme name for code, e.g. "Nord" or "Catppuccin Mocha".
+    pub theme: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

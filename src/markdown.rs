@@ -2,7 +2,7 @@
 //! quotes, task boxes, fenced code (highlighted), inline `code` and **bold**.
 
 use crate::highlight::Highlighter;
-use ratatui::style::{Color, Modifier, Style, Stylize};
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 
 pub fn render(src: &str, hl: &Highlighter) -> Vec<Line<'static>> {

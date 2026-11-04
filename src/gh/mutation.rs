@@ -26,6 +26,18 @@ impl Mutation {
     pub fn needs_reload(&self) -> bool {
         !matches!(self, Mutation::SetViewed { .. })
     }
+
+    /// Fills in the text of a mutation drafted before the user wrote it.
+    pub fn with_body(mut self, text: String) -> Self {
+        if let Mutation::AddThread { body, .. }
+        | Mutation::Reply { body, .. }
+        | Mutation::Submit { body, .. }
+        | Mutation::Comment { body } = &mut self
+        {
+            *body = text;
+        }
+        self
+    }
 }
 
 pub struct Job<K> {

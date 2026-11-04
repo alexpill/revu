@@ -108,18 +108,14 @@ impl PrSummary {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct Dashboard {
-    pub viewer: String,
-    /// Same order as the configured repos.
-    pub repos: Vec<RepoPrs>,
-}
-
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RepoPrs {
     pub total_count: u64,
     pub nodes: Vec<PrSummary>,
+    /// Login of the authenticated user (fetched alongside).
+    #[serde(skip)]
+    pub viewer: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -151,6 +147,7 @@ pub struct Comment {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct IssueDetail {
+    pub id: String,
     pub number: u64,
     pub title: String,
     pub body: String,

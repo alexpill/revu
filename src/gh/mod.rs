@@ -46,7 +46,12 @@ fn graphql_errors(v: &Value) -> Option<String> {
 
 pub fn graphql(query: &str, variables: Value) -> Result<Value> {
     let input = json!({ "query": query, "variables": variables }).to_string();
-    let out = gh(&["api", "graphql", "--input", "-"], Some(&input))?;
+    let args = ["api", "graphql", "--input", "-"];
+    // GitHub's GraphQL gateway times out now and then on heavy queries.
+    let out = gh(&args, Some(&input)).or_else(|e| match e.to_string().contains("HTTP 50") {
+        true => gh(&args, Some(&input)),
+        false => Err(e),
+    })?;
     let mut v: Value = serde_json::from_slice(&out)?;
     if let Some(msg) = graphql_errors(&v) {
         bail!(msg);
@@ -59,7 +64,7 @@ fn decode<T: DeserializeOwned>(v: Value) -> Result<T> {
 }
 
 /// Raw REST GET (e.g. file contents with the raw media type).
-pub fn rest_raw(path: &str, accept: &str) -> Result<Vec<u8>> {
+fn rest_raw(path: &str, accept: &str) -> Result<Vec<u8>> {
     gh(&["api", "-H", &format!("Accept: {accept}"), path], None)
 }
 
@@ -79,24 +84,18 @@ fragment PrFields on PullRequest {
   commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
 }"#;
 
-/// Open PRs of every repo in a single round-trip (one aliased field per repo).
-/// Repo names are validated in `config`, so inlining them is safe.
-pub fn dashboard(repos: &[(&str, &str)]) -> Result<Dashboard> {
-    let mut q = String::from("query { viewer { login }\n");
-    for (i, (owner, name)) in repos.iter().enumerate() {
-        q += &format!(
-            "r{i}: repository(owner: \"{owner}\", name: \"{name}\") {{ pullRequests(states: OPEN, first: 50, \
-             orderBy: {{field: UPDATED_AT, direction: DESC}}) {{ totalCount nodes {{ ...PrFields }} }} }}\n"
-        );
-    }
-    q += "}";
-    q += PR_FIELDS;
-    let mut data = graphql(&q, json!({}))?;
-    let viewer = data["viewer"]["login"].as_str().unwrap_or_default().to_string();
-    let repos = (0..repos.len())
-        .map(|i| decode(data[format!("r{i}")]["pullRequests"].take()))
-        .collect::<Result<_>>()?;
-    Ok(Dashboard { viewer, repos })
+/// The most recently updated open PRs of a repo.
+// shortcut: first 30 only (GitHub gets slow and 502s on bigger pages), add paging if a repo needs more.
+pub fn repo_prs(owner: &str, name: &str) -> Result<RepoPrs> {
+    let q = format!(
+        "query($owner: String!, $name: String!) {{ viewer {{ login }} repository(owner: $owner, name: $name) {{
+          pullRequests(states: OPEN, first: 30, orderBy: {{field: UPDATED_AT, direction: DESC}}) {{
+            totalCount nodes {{ ...PrFields }} }} }} }}{PR_FIELDS}"
+    );
+    let mut data = graphql(&q, json!({ "owner": owner, "name": name }))?;
+    let mut prs: RepoPrs = decode(data["repository"]["pullRequests"].take())?;
+    prs.viewer = data["viewer"]["login"].as_str().unwrap_or_default().to_string();
+    Ok(prs)
 }
 
 /// `query` uses GitHub search syntax and is scoped to the repo.
@@ -109,7 +108,7 @@ pub fn issues(repo: &str, query: &str) -> Result<Vec<IssueSummary>> {
 
 pub fn issue(owner: &str, name: &str, number: u64) -> Result<IssueDetail> {
     const Q: &str = r#"query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) {
-      issue(number: $number) { number title body url state createdAt author { login }
+      issue(number: $number) { id number title body url state createdAt author { login }
         labels(first: 20) { nodes { name } } assignees(first: 10) { nodes { login } }
         comments(first: 100) { nodes { author { login } body createdAt } } } } }"#;
     let mut data = graphql(Q, json!({ "owner": owner, "name": name, "number": number }))?;
