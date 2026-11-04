@@ -148,10 +148,8 @@ pub struct Comment {
 #[serde(rename_all = "camelCase")]
 pub struct IssueDetail {
     pub id: String,
-    pub number: u64,
     pub title: String,
     pub body: String,
-    pub url: String,
     pub state: String,
     pub created_at: String,
     pub author: Option<Actor>,
@@ -202,7 +200,6 @@ pub struct PrDetail {
     pub number: u64,
     pub title: String,
     pub body: String,
-    pub url: String,
     /// OPEN | CLOSED | MERGED
     pub state: String,
     pub is_draft: bool,

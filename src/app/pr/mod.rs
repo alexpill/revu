@@ -8,6 +8,8 @@ use super::picker::{Picked, Picker};
 use super::ui;
 use super::{Action, Ctx, Key, Msg};
 use crate::gh::{self, model::PrDetail, mutation::Mutation};
+use crate::lsp;
+use anyhow::{Result, anyhow};
 use code::Buffer;
 use files::FilesView;
 use ratatui::Frame;
@@ -15,7 +17,9 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Style, Stylize};
 use ratatui::text::Line;
-use ratatui::widgets::{Clear, Paragraph, Tabs};
+use ratatui::widgets::{Clear, Paragraph, Tabs, Wrap};
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
 pub const HELP: &[(&str, &str)] = &[
     ("1-9 H/L", "tabs: conversation, files, open buffers"),
@@ -29,6 +33,8 @@ pub const HELP: &[(&str, &str)] = &[
     ("c", "comment line or range (pending review)"),
     ("r / R", "on a thread: reply / resolve toggle"),
     ("z", "unfold generated file"),
+    ("gd / gr / K", "definition / references / hover (language server)"),
+    ("e", "open here in $EDITOR"),
     ("Ctrl-p", "open any file of the PR head"),
     ("/ n N", "buffer: search"),
     ("Ctrl-o", "jump back"),
@@ -67,6 +73,22 @@ enum Jump {
 
 enum PickFor {
     File,
+    Location(Vec<lsp::Location>),
+}
+
+#[derive(Clone, Copy)]
+enum AskKind {
+    Definition,
+    References,
+    Hover,
+}
+
+/// A language-server question about a position of the PR head.
+struct Ask {
+    kind: AskKind,
+    path: String,
+    line: u32,
+    col: usize,
 }
 
 const FILES_TAB: usize = 1;
@@ -84,6 +106,13 @@ pub struct PrScreen {
     /// All paths of the PR head, loaded on first Ctrl-p.
     tree: Option<Vec<String>>,
     jumps: Vec<Jump>,
+    /// Detached checkout of the PR head that language servers run in.
+    worktree: Option<Result<PathBuf, String>>,
+    /// Waiting for the worktree.
+    pending_ask: Option<Ask>,
+    servers: HashMap<Vec<String>, lsp::Server>,
+    lsp_requests: HashMap<i64, AskKind>,
+    hover: Option<String>,
 }
 
 impl PrScreen {
@@ -99,6 +128,11 @@ impl PrScreen {
             picker: None,
             tree: None,
             jumps: Vec::new(),
+            worktree: None,
+            pending_ask: None,
+            servers: HashMap::new(),
+            lsp_requests: HashMap::new(),
+            hover: None,
         };
         s.load(ctx);
         s.load_files(ctx);
@@ -181,6 +215,122 @@ impl PrScreen {
         });
     }
 
+    fn ask(&mut self, ask: Ask, ctx: &mut Ctx) {
+        match &self.worktree {
+            Some(Ok(root)) => {
+                let root = root.clone();
+                if let Err(e) = self.send_ask(&root, ask, ctx) {
+                    ctx.error(e);
+                }
+            }
+            Some(Err(e)) => ctx.error(e.clone()),
+            None => {
+                let first = self.pending_ask.replace(ask).is_none();
+                let Some(oid) = self.detail().map(|d| d.head_ref_oid.clone()) else { return };
+                if first {
+                    let (key, src) = (self.key, ctx.sources[self.key.0].clone());
+                    ctx.spawn(move || Msg::Worktree(key, src.worktree(key.1, &oid)));
+                    ctx.info("preparing a worktree of the PR head for the language server…");
+                }
+            }
+        }
+    }
+
+    fn ask_none(&mut self, kind: AskKind, path: String, line: u32, col: usize, ctx: &mut Ctx) -> Action {
+        self.ask(Ask { kind, path, line, col }, ctx);
+        Action::None
+    }
+
+    fn send_ask(&mut self, root: &Path, ask: Ask, ctx: &mut Ctx) -> Result<()> {
+        let abs = if ask.path.starts_with('/') { PathBuf::from(&ask.path) } else { root.join(&ask.path) };
+        let (cmd, lang) = lsp::server_for(&ask.path, &ctx.cfg.lsp)
+            .ok_or_else(|| anyhow!("no language server known for {} (add one under [lsp])", ask.path))?;
+        if !self.servers.contains_key(&cmd) {
+            let tx = ctx.sender();
+            let server = lsp::Server::start(&cmd, root, move |id, r| {
+                let _ = tx.send(Msg::Lsp(id, r));
+            })?;
+            self.servers.insert(cmd.clone(), server);
+        }
+        let server = self.servers.get_mut(&cmd).unwrap();
+        let text = std::fs::read_to_string(&abs)?;
+        server.open(&abs, &lang, &text);
+        let character = lsp::utf16_col(text.lines().nth(ask.line as usize).unwrap_or(""), ask.col);
+        let method = match ask.kind {
+            AskKind::Definition => "textDocument/definition",
+            AskKind::References => "textDocument/references",
+            AskKind::Hover => "textDocument/hover",
+        };
+        let id = server.request(method, &abs, ask.line, character);
+        self.lsp_requests.insert(id, ask.kind);
+        ctx.info(format!("asking {}… (first answers wait for indexing)", cmd[0]));
+        Ok(())
+    }
+
+    fn on_lsp(&mut self, kind: AskKind, r: Result<serde_json::Value, String>, ctx: &mut Ctx) {
+        let v = match r {
+            Ok(v) => v,
+            Err(e) => return ctx.error(format!("language server: {e}")),
+        };
+        ctx.clear_status();
+        match kind {
+            AskKind::Hover => match lsp::hover_text(&v) {
+                Some(t) => self.hover = Some(t),
+                None => ctx.info("nothing to show"),
+            },
+            AskKind::Definition | AskKind::References => {
+                let locs = lsp::locations(&v);
+                match (kind, locs.len()) {
+                    (_, 0) => ctx.info("nothing found"),
+                    (AskKind::Definition, 1) => self.open_location(&locs[0], ctx),
+                    _ => self.pick_locations(locs),
+                }
+            }
+        }
+    }
+
+    /// Repo-relative when inside the worktree, absolute otherwise.
+    fn display_path(&self, abs: &Path) -> String {
+        let root = self.worktree.as_ref().and_then(|w| w.as_ref().ok());
+        match root.and_then(|r| abs.strip_prefix(r).ok()) {
+            Some(rel) => rel.to_string_lossy().into_owned(),
+            None => abs.to_string_lossy().into_owned(),
+        }
+    }
+
+    fn open_location(&mut self, (abs, line, character): &lsp::Location, ctx: &mut Ctx) {
+        let col = lsp::read_line(abs, *line).map_or(0, |l| lsp::display_col(&l, *character));
+        self.open_buffer(self.display_path(abs), *line as usize, col, ctx);
+    }
+
+    fn pick_locations(&mut self, locs: Vec<lsp::Location>) {
+        let items = locs
+            .iter()
+            .map(|(abs, line, _)| {
+                let text = lsp::read_line(abs, *line).unwrap_or_default();
+                format!("{}:{}  {}", self.display_path(abs), line + 1, text.trim())
+            })
+            .collect();
+        self.picker = Some((Picker::new("locations", items), PickFor::Location(locs)));
+    }
+
+    /// Opens the current position in $EDITOR, in the worktree when there is one.
+    fn edit_here(&mut self, ctx: &mut Ctx) {
+        let here = match self.tab {
+            FILES_TAB => self.files.as_ref().and_then(|f| f.as_ref().ok()).and_then(|f| f.head_position()).map(|(p, l, _)| (p, l)),
+            t if t >= FIRST_BUFFER => self.buffers.get(t - FIRST_BUFFER).map(|b| (b.path.clone(), b.cursor as u32)),
+            _ => None,
+        };
+        let Some((path, line)) = here else { return ctx.info("nothing to open here") };
+        let base = match (&self.worktree, &ctx.sources[self.key.0].local) {
+            _ if path.starts_with('/') => PathBuf::new(),
+            (Some(Ok(wt)), _) => wt.clone(),
+            (_, Some(local)) => local.clone(), // may not be at the PR head
+            _ => return ctx.error("needs a local clone: set `path` for this repo in the config"),
+        };
+        ctx.open_in_editor(base.join(path), line + 1);
+    }
+
     fn open_finder(&mut self, ctx: &mut Ctx) {
         match &self.tree {
             Some(paths) => self.picker = Some((Picker::new("files", paths.clone()), PickFor::File)),
@@ -213,6 +363,16 @@ impl PrScreen {
                 }
                 Err(e) => ctx.error(e),
             },
+            Msg::Worktree(key, r) if key == self.key => {
+                self.worktree = Some(r.map_err(|e| e.to_string()));
+                if let Some(ask) = self.pending_ask.take() {
+                    self.ask(ask, ctx);
+                }
+            }
+            Msg::Lsp(id, r) if self.lsp_requests.contains_key(&id) => {
+                let kind = self.lsp_requests.remove(&id).unwrap();
+                self.on_lsp(kind, r, ctx);
+            }
             Msg::FileText(key, path, r) if key == self.key => {
                 if let Some(b) = self.buffers.iter_mut().find(|b| b.path == path) {
                     b.loaded(r.map_err(|e| e.to_string()), &ctx.hl);
@@ -229,6 +389,9 @@ impl PrScreen {
     }
 
     pub fn on_key(&mut self, k: KeyEvent, ctx: &mut Ctx) -> Action {
+        if self.hover.take().is_some() {
+            return Action::None;
+        }
         if self.submit_menu {
             self.submit_menu = false;
             if let (KeyCode::Char(c), Some(d)) = (k.code, self.detail()) {
@@ -252,6 +415,7 @@ impl PrScreen {
                             let path = self.tree.as_ref().unwrap()[i].clone();
                             self.open_buffer(path, 0, 0, ctx);
                         }
+                        PickFor::Location(locs) => self.open_location(&locs[i], ctx),
                     }
                 }
             }
@@ -285,11 +449,9 @@ impl PrScreen {
         match outcome {
             Outcome::Handled => return Action::None,
             Outcome::Unhandled => {}
-            // Wired to the language server in a later step.
-            Outcome::Definition(..) | Outcome::References(..) | Outcome::Hover(..) => {
-                ctx.info("no language server yet");
-                return Action::None;
-            }
+            Outcome::Definition(path, line, col) => return self.ask_none(AskKind::Definition, path, line, col, ctx),
+            Outcome::References(path, line, col) => return self.ask_none(AskKind::References, path, line, col, ctx),
+            Outcome::Hover(path, line, col) => return self.ask_none(AskKind::Hover, path, line, col, ctx),
         }
 
         let tabs = FIRST_BUFFER + self.buffers.len();
@@ -301,6 +463,7 @@ impl PrScreen {
                 self.load_files(ctx);
             }
             KeyCode::Char('o') => ctx.browse(self.key),
+            KeyCode::Char('e') => self.edit_here(ctx),
             KeyCode::Char(c @ '1'..='9') => {
                 let t = c as usize - '1' as usize;
                 if t < tabs {
@@ -384,6 +547,12 @@ impl PrScreen {
         }
         if let Some((picker, _)) = &mut self.picker {
             picker.render(f);
+        }
+        if let Some(text) = &self.hover {
+            let lines = crate::markdown::render(text, &ctx.hl);
+            let area = ui::centered(f.area(), 90, lines.len() as u16 + 2);
+            f.render_widget(Clear, area);
+            f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }).block(ui::block("hover", true)), area);
         }
     }
 }

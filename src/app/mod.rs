@@ -40,6 +40,9 @@ pub enum Msg {
     /// All paths at the PR head.
     Tree(Key, Result<Vec<String>>),
     FileText(Key, String, Result<String>),
+    Worktree(Key, Result<PathBuf>),
+    /// Language-server response, by request id (not counted as a background job).
+    Lsp(i64, std::result::Result<serde_json::Value, String>),
     Mutated(Key, Mutation, Result<()>),
 }
 
@@ -47,6 +50,8 @@ pub enum Msg {
 pub enum External {
     /// Write a comment in $EDITOR, then queue `mutation` with it as body.
     Compose { key: Key, pr_id: String, mutation: Mutation },
+    /// Open a file at a 1-based line in $EDITOR.
+    Open { path: PathBuf, line: u32 },
 }
 
 pub enum Action {
@@ -119,6 +124,18 @@ impl Ctx {
 
     pub fn compose(&mut self, key: Key, pr_id: &str, mutation: Mutation) {
         self.external = Some(External::Compose { key, pr_id: pr_id.to_string(), mutation });
+    }
+
+    pub fn open_in_editor(&mut self, path: PathBuf, line: u32) {
+        self.external = Some(External::Open { path, line });
+    }
+
+    pub fn sender(&self) -> Sender<Msg> {
+        self.tx.clone()
+    }
+
+    pub fn clear_status(&mut self) {
+        self.status = None;
     }
 
     pub fn info(&mut self, s: impl Into<String>) {
@@ -235,7 +252,9 @@ impl App {
     }
 
     fn on_msg(&mut self, msg: Msg) {
-        self.ctx.inflight = self.ctx.inflight.saturating_sub(1);
+        if !matches!(msg, Msg::Lsp(..)) {
+            self.ctx.inflight = self.ctx.inflight.saturating_sub(1);
+        }
         let msg = match msg {
             Msg::RepoPrs(i, r) => return self.main.on_prs(i, r, &mut self.ctx),
             Msg::Issues(i, r) => return self.main.on_issues(i, r, &mut self.ctx),
@@ -270,6 +289,11 @@ impl App {
                         self.ctx.info("sending…");
                     }
                     Err(e) => self.ctx.info(format!("cancelled ({e})")),
+                }
+            }
+            External::Open { path, line } => {
+                if let Err(e) = with_terminal_released(&mut editor(&[&format!("+{line}"), &path.to_string_lossy()])) {
+                    self.ctx.error(e);
                 }
             }
         }

@@ -177,8 +177,8 @@ impl FilesView {
         }
     }
 
-    /// Position for language-server requests: only lines that exist on the PR head.
-    fn lsp_position(&self) -> Option<(String, u32, usize)> {
+    /// (path, 0-based line, display column) on the PR head; `None` on removed lines.
+    pub fn head_position(&self) -> Option<(String, u32, usize)> {
         let l = self.current_line()?;
         let n = l.new.filter(|_| l.kind != Kind::Del)?;
         Some((self.files[self.sel].path.clone(), n - 1, self.col))
@@ -192,8 +192,8 @@ impl FilesView {
                     self.cursor = 0;
                     Outcome::Handled
                 }
-                KeyCode::Char('d') => self.lsp_position().map_or(Outcome::Handled, |(p, l, c)| Outcome::Definition(p, l, c)),
-                KeyCode::Char('r') => self.lsp_position().map_or(Outcome::Handled, |(p, l, c)| Outcome::References(p, l, c)),
+                KeyCode::Char('d') => self.head_position().map_or(Outcome::Handled, |(p, l, c)| Outcome::Definition(p, l, c)),
+                KeyCode::Char('r') => self.head_position().map_or(Outcome::Handled, |(p, l, c)| Outcome::References(p, l, c)),
                 _ => Outcome::Handled,
             };
         }
@@ -232,7 +232,7 @@ impl FilesView {
             KeyCode::Char('}') => self.jump_hunk(true),
             KeyCode::Char('{') => self.jump_hunk(false),
             KeyCode::Char('K') => {
-                return self.lsp_position().map_or(Outcome::Handled, |(p, l, c)| Outcome::Hover(p, l, c));
+                return self.head_position().map_or(Outcome::Handled, |(p, l, c)| Outcome::Hover(p, l, c));
             }
             KeyCode::Char('v') => self.anchor = if self.anchor.is_some() { None } else { Some(self.cursor) },
             KeyCode::Char('c') => self.comment(ctx, key, detail),

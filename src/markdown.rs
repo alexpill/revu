@@ -50,6 +50,9 @@ fn block_line(raw: &str) -> Line<'static> {
     if let Some(level) = t.split_once(' ').filter(|(h, _)| !h.is_empty() && h.chars().all(|c| c == '#')) {
         return Line::from(Span::styled(level.1.to_string(), Style::new().fg(Color::Cyan).bold()));
     }
+    if t.len() >= 3 && (t.chars().all(|c| c == '-') || t.chars().all(|c| c == '*')) {
+        return Line::from(Span::styled("─".repeat(40), Style::new().fg(Color::DarkGray)));
+    }
     if let Some(rest) = t.strip_prefix('>') {
         return Line::from(Span::styled(format!("▎ {}", rest.trim_start()), Style::new().dark_gray().italic()));
     }

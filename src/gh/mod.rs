@@ -108,7 +108,7 @@ pub fn issues(repo: &str, query: &str) -> Result<Vec<IssueSummary>> {
 
 pub fn issue(owner: &str, name: &str, number: u64) -> Result<IssueDetail> {
     const Q: &str = r#"query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) {
-      issue(number: $number) { id number title body url state createdAt author { login }
+      issue(number: $number) { id title body state createdAt author { login }
         labels(first: 20) { nodes { name } } assignees(first: 10) { nodes { login } }
         comments(first: 100) { nodes { author { login } body createdAt } } } } }"#;
     let mut data = graphql(Q, json!({ "owner": owner, "name": name, "number": number }))?;
@@ -118,7 +118,7 @@ pub fn issue(owner: &str, name: &str, number: u64) -> Result<IssueDetail> {
 pub fn pr(owner: &str, name: &str, number: u64) -> Result<PrDetail> {
     const Q: &str = r#"query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) {
       pullRequest(number: $number) {
-        id number title body url state isDraft createdAt baseRefName headRefName headRefOid
+        id number title body state isDraft createdAt baseRefName headRefName headRefOid
         additions deletions changedFiles mergeable reviewDecision
         author { login }
         assignees(first: 10) { nodes { login } }

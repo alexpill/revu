@@ -3,6 +3,7 @@ mod config;
 mod diff;
 mod gh;
 mod highlight;
+mod lsp;
 mod markdown;
 mod source;
 
