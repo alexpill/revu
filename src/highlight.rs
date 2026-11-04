@@ -22,7 +22,10 @@ impl Highlighter {
             .copied()
             .find(|n| theme.is_some_and(|t| n.as_name().eq_ignore_ascii_case(t)))
             .unwrap_or(EmbeddedThemeName::OneHalfDark);
-        Self { syntaxes: two_face::syntax::extra_newlines(), theme: two_face::theme::extra().get(name).clone() }
+        Self {
+            syntaxes: two_face::syntax::extra_newlines(),
+            theme: two_face::theme::extra().get(name).clone(),
+        }
     }
 
     fn syntax_for_path(&self, path: &str) -> &SyntaxReference {
@@ -41,7 +44,10 @@ impl Highlighter {
 
     /// For fenced code blocks: `token` is the language after the ```.
     pub fn token<'a>(&self, token: &str, lines: impl IntoIterator<Item = &'a str>) -> Vec<StyledLine> {
-        let syntax = self.syntaxes.find_syntax_by_token(token).unwrap_or_else(|| self.syntaxes.find_syntax_plain_text());
+        let syntax = self
+            .syntaxes
+            .find_syntax_by_token(token)
+            .unwrap_or_else(|| self.syntaxes.find_syntax_plain_text());
         self.run(syntax, lines)
     }
 

@@ -59,7 +59,11 @@ impl Check {
     }
     /// SUCCESS / FAILURE / PENDING-ish, normalized from both check kinds.
     pub fn result(&self) -> &str {
-        match (self.conclusion.as_deref(), self.state.as_deref(), self.status.as_deref()) {
+        match (
+            self.conclusion.as_deref(),
+            self.state.as_deref(),
+            self.status.as_deref(),
+        ) {
             (Some(c), _, _) => c,
             (None, Some(s), _) => s,
             (None, None, Some(_)) => "PENDING",

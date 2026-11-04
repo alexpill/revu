@@ -38,7 +38,13 @@ enum Filter {
 }
 
 impl Filter {
-    const ALL: [Filter; 5] = [Filter::All, Filter::Review, Filter::Assigned, Filter::Mine, Filter::Draft];
+    const ALL: [Filter; 5] = [
+        Filter::All,
+        Filter::Review,
+        Filter::Assigned,
+        Filter::Mine,
+        Filter::Draft,
+    ];
 
     fn label(self) -> &'static str {
         match self {
@@ -96,7 +102,13 @@ impl MainScreen {
             })
             .collect();
         let prs = vec![None; ctx.cfg.repos.len()];
-        let mut s = Self { tab: 0, prs, home: TableState::default().with_selected(0), repos, input: None };
+        let mut s = Self {
+            tab: 0,
+            prs,
+            home: TableState::default().with_selected(0),
+            repos,
+            input: None,
+        };
         s.refresh(ctx);
         s
     }
@@ -107,10 +119,10 @@ impl MainScreen {
             let (o, n) = (o.to_string(), n.to_string());
             ctx.spawn(move || Msg::RepoPrs(i, gh::repo_prs(&o, &n)));
         }
-        if let Some(i) = self.repo_idx() {
-            if self.repos[i].issues.is_some() {
-                self.load_issues(i, ctx);
-            }
+        if let Some(i) = self.repo_idx()
+            && self.repos[i].issues.is_some()
+        {
+            self.load_issues(i, ctx);
         }
     }
 
@@ -169,9 +181,15 @@ impl MainScreen {
             .filter(|pr| t.filter.keep(pr, me))
             .filter(|pr| {
                 needle.is_empty()
-                    || format!("#{} {} {} {}", pr.number, pr.title, ui::login(&pr.author), pr.head_ref_name)
-                        .to_lowercase()
-                        .contains(&needle)
+                    || format!(
+                        "#{} {} {} {}",
+                        pr.number,
+                        pr.title,
+                        ui::login(&pr.author),
+                        pr.head_ref_name
+                    )
+                    .to_lowercase()
+                    .contains(&needle)
             })
             .collect()
     }
@@ -184,7 +202,11 @@ impl MainScreen {
                 (&mut self.home, n)
             }
             Some(i) if self.repos[i].issues_view => {
-                let n = self.repos[i].issues.as_ref().and_then(|r| r.as_ref().ok()).map_or(0, Vec::len);
+                let n = self.repos[i]
+                    .issues
+                    .as_ref()
+                    .and_then(|r| r.as_ref().ok())
+                    .map_or(0, Vec::len);
                 (&mut self.repos[i].issue_sel, n)
             }
             Some(i) => {
@@ -214,13 +236,17 @@ impl MainScreen {
                 KeyCode::Esc => self.input = None,
                 KeyCode::Enter => {
                     let text = self.input.take().unwrap_or_default();
-                    if let Some(i) = self.repo_idx() {
-                        if self.repos[i].issues_view {
-                            self.repos[i].issue_query = if text.trim().is_empty() { DEFAULT_ISSUE_QUERY.into() } else { text };
-                            self.repos[i].issues = None;
-                            self.repos[i].issue_sel.select(Some(0));
-                            self.load_issues(i, ctx);
-                        }
+                    if let Some(i) = self.repo_idx()
+                        && self.repos[i].issues_view
+                    {
+                        self.repos[i].issue_query = if text.trim().is_empty() {
+                            DEFAULT_ISSUE_QUERY.into()
+                        } else {
+                            text
+                        };
+                        self.repos[i].issues = None;
+                        self.repos[i].issue_sel.select(Some(0));
+                        self.load_issues(i, ctx);
                     }
                 }
                 KeyCode::Backspace => {
@@ -230,11 +256,11 @@ impl MainScreen {
                 _ => {}
             }
             // PR filtering is live while typing.
-            if let (Some(i), Some(text)) = (self.repo_idx(), &self.input) {
-                if !self.repos[i].issues_view {
-                    self.repos[i].text = text.clone();
-                    self.repos[i].prs.select(Some(0));
-                }
+            if let (Some(i), Some(text)) = (self.repo_idx(), &self.input)
+                && !self.repos[i].issues_view
+            {
+                self.repos[i].text = text.clone();
+                self.repos[i].prs.select(Some(0));
             }
             return Action::None;
         }
@@ -296,7 +322,11 @@ impl MainScreen {
             KeyCode::Char('/') => {
                 if let Some(i) = self.repo_idx() {
                     let t = &self.repos[i];
-                    self.input = Some(if t.issues_view { t.issue_query.clone() } else { t.text.clone() });
+                    self.input = Some(if t.issues_view {
+                        t.issue_query.clone()
+                    } else {
+                        t.text.clone()
+                    });
                 }
             }
             KeyCode::Char('o') => {
@@ -318,16 +348,29 @@ impl MainScreen {
         let [tabs_area, body] = Layout::vertical([Constraint::Length(1), Constraint::Fill(1)]).areas(area);
         let mut titles = vec![Line::from(" 1 home ")];
         for (i, r) in ctx.cfg.repos.iter().enumerate() {
-            let count = self.loaded(i).map(|p| format!(" {}", p.total_count)).unwrap_or_default();
-            titles.push(Line::from(vec![format!(" {} {}", i + 2, r.name).into(), count.dark_gray(), " ".into()]));
+            let count = self
+                .loaded(i)
+                .map(|p| format!(" {}", p.total_count))
+                .unwrap_or_default();
+            titles.push(Line::from(vec![
+                format!(" {} {}", i + 2, r.name).into(),
+                count.dark_gray(),
+                " ".into(),
+            ]));
         }
         f.render_widget(
-            Tabs::new(titles).select(self.tab).highlight_style(Style::new().fg(ui::ACCENT).bold().reversed()).divider(""),
+            Tabs::new(titles)
+                .select(self.tab)
+                .highlight_style(Style::new().fg(ui::ACCENT).bold().reversed())
+                .divider(""),
             tabs_area,
         );
 
         if ctx.cfg.repos.is_empty() {
-            let msg = format!(" no repos configured: add [[repos]] to {}", crate::config::config_path().display());
+            let msg = format!(
+                " no repos configured: add [[repos]] to {}",
+                crate::config::config_path().display()
+            );
             return f.render_widget(Paragraph::new(msg).yellow(), body);
         }
         match self.repo_idx() {
@@ -355,8 +398,18 @@ impl MainScreen {
                     Some(Ok(r)) => r,
                 };
                 let count = |f: Filter| r.nodes.iter().filter(|p| f.keep(p, me)).count();
-                let failing = r.nodes.iter().filter(|p| matches!(p.ci(), Some("FAILURE" | "ERROR"))).count();
-                let n = |v: usize| if v == 0 { Cell::from("·").style(DIM) } else { Cell::from(v.to_string()) };
+                let failing = r
+                    .nodes
+                    .iter()
+                    .filter(|p| matches!(p.ci(), Some("FAILURE" | "ERROR")))
+                    .count();
+                let n = |v: usize| {
+                    if v == 0 {
+                        Cell::from("·").style(DIM)
+                    } else {
+                        Cell::from(v.to_string())
+                    }
+                };
                 Row::new(vec![
                     Cell::from(format!("{} {}", i + 2, cfg.name)),
                     Cell::from(r.total_count.to_string()),
@@ -371,8 +424,21 @@ impl MainScreen {
         let h = summary.len() as u16 + 3;
         let [top, bottom] = Layout::vertical([Constraint::Length(h), Constraint::Fill(1)]).areas(area);
         let header = Row::new(["repository", "open", "review", "assigned", "mine", "drafts", "failing"]).style(DIM);
-        let widths = [Constraint::Fill(1), Constraint::Length(5), Constraint::Length(7), Constraint::Length(9), Constraint::Length(5), Constraint::Length(7), Constraint::Length(8)];
-        f.render_widget(Table::new(summary, widths).header(header).block(ui::block("repositories", false)), top);
+        let widths = [
+            Constraint::Fill(1),
+            Constraint::Length(5),
+            Constraint::Length(7),
+            Constraint::Length(9),
+            Constraint::Length(5),
+            Constraint::Length(7),
+            Constraint::Length(8),
+        ];
+        f.render_widget(
+            Table::new(summary, widths)
+                .header(header)
+                .block(ui::block("repositories", false)),
+            top,
+        );
 
         let items = self.for_you(me);
         let rows: Vec<Row> = items
@@ -392,8 +458,17 @@ impl MainScreen {
                 ])
             })
             .collect();
-        let widths = [Constraint::Length(1), Constraint::Length(18), Constraint::Length(6), Constraint::Fill(1), Constraint::Length(8), Constraint::Length(4)];
-        let table = Table::new(rows, widths).row_highlight_style(SELECTED).block(ui::block(format!("for you ({})", items.len()), true));
+        let widths = [
+            Constraint::Length(1),
+            Constraint::Length(18),
+            Constraint::Length(6),
+            Constraint::Fill(1),
+            Constraint::Length(8),
+            Constraint::Length(4),
+        ];
+        let table = Table::new(rows, widths)
+            .row_highlight_style(SELECTED)
+            .block(ui::block(format!("for you ({})", items.len()), true));
         f.render_stateful_widget(table, bottom, &mut self.home);
     }
 
@@ -404,7 +479,11 @@ impl MainScreen {
         let rows: Vec<Row> = prs
             .iter()
             .map(|pr| {
-                let you = if pr.review_requested(me) { "◆".yellow() } else { " ".into() };
+                let you = if pr.review_requested(me) {
+                    "◆".yellow()
+                } else {
+                    " ".into()
+                };
                 Row::new(vec![
                     Cell::from(ui::ci(pr.ci())),
                     Cell::from(format!("#{}", pr.number)).style(DIM),
@@ -412,7 +491,10 @@ impl MainScreen {
                     Cell::from(title(pr)),
                     Cell::from(ui::login(&pr.author)).style(DIM),
                     Cell::from(ui::decision(pr.review_decision.as_deref())),
-                    Cell::from(Line::from(vec![format!("+{}", pr.additions).green(), format!(" -{}", pr.deletions).red()])),
+                    Cell::from(Line::from(vec![
+                        format!("+{}", pr.additions).green(),
+                        format!(" -{}", pr.deletions).red(),
+                    ])),
                     Cell::from(ui::ago(&pr.updated_at)).style(DIM),
                 ])
             })
@@ -432,7 +514,9 @@ impl MainScreen {
             Constraint::Length(13),
             Constraint::Length(4),
         ];
-        let table = Table::new(rows, widths).row_highlight_style(SELECTED).block(ui::block(title, true));
+        let table = Table::new(rows, widths)
+            .row_highlight_style(SELECTED)
+            .block(ui::block(title, true));
         let area = self.render_input(f, area);
         f.render_stateful_widget(table, area, &mut self.repos[i].prs);
     }
@@ -446,8 +530,17 @@ impl MainScreen {
             Some(Ok(issues)) => issues
                 .iter()
                 .map(|is| {
-                    let state = if is.state == "OPEN" { "●".green() } else { "●".magenta() };
-                    let labels: Vec<Span> = is.labels.nodes.iter().map(|l| format!(" {}", l.name).dark_gray()).collect();
+                    let state = if is.state == "OPEN" {
+                        "●".green()
+                    } else {
+                        "●".magenta()
+                    };
+                    let labels: Vec<Span> = is
+                        .labels
+                        .nodes
+                        .iter()
+                        .map(|l| format!(" {}", l.name).dark_gray())
+                        .collect();
                     Row::new(vec![
                         Cell::from(state),
                         Cell::from(format!("#{}", is.number)).style(DIM),
@@ -459,8 +552,17 @@ impl MainScreen {
                 })
                 .collect(),
         };
-        let widths = [Constraint::Length(1), Constraint::Length(6), Constraint::Fill(1), Constraint::Length(16), Constraint::Length(5), Constraint::Length(4)];
-        let table = Table::new(rows, widths).row_highlight_style(SELECTED).block(ui::block(title, true));
+        let widths = [
+            Constraint::Length(1),
+            Constraint::Length(6),
+            Constraint::Fill(1),
+            Constraint::Length(16),
+            Constraint::Length(5),
+            Constraint::Length(4),
+        ];
+        let table = Table::new(rows, widths)
+            .row_highlight_style(SELECTED)
+            .block(ui::block(title, true));
         let area = self.render_input(f, area);
         f.render_stateful_widget(table, area, &mut self.repos[i].issue_sel);
     }
@@ -469,7 +571,10 @@ impl MainScreen {
     fn render_input(&self, f: &mut Frame, area: Rect) -> Rect {
         let Some(input) = &self.input else { return area };
         let [rest, line] = Layout::vertical([Constraint::Fill(1), Constraint::Length(1)]).areas(area);
-        f.render_widget(Paragraph::new(Line::from(vec!["/".cyan(), input.clone().into(), "█".dark_gray()])), line);
+        f.render_widget(
+            Paragraph::new(Line::from(vec!["/".cyan(), input.clone().into(), "█".dark_gray()])),
+            line,
+        );
         rest
     }
 }

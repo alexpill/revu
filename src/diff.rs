@@ -34,12 +34,19 @@ pub fn parse(patch: &str) -> Vec<DiffLine> {
     let (mut old, mut new) = (0u32, 0u32);
     let mut out = Vec::new();
     for raw in patch.lines() {
-        let line = |kind, o, n, text: &str| DiffLine { kind, old: o, new: n, text: text.to_string() };
+        let line = |kind, o, n, text: &str| DiffLine {
+            kind,
+            old: o,
+            new: n,
+            text: text.to_string(),
+        };
         if raw.starts_with("@@") {
             // @@ -a,b +c,d @@ section
-            let mut nums = raw.split(' ').skip(1).take(2).map(|r| {
-                r[1..].split(',').next().and_then(|n| n.parse().ok()).unwrap_or(0)
-            });
+            let mut nums = raw
+                .split(' ')
+                .skip(1)
+                .take(2)
+                .map(|r| r[1..].split(',').next().and_then(|n| n.parse().ok()).unwrap_or(0));
             old = nums.next().unwrap_or(0);
             new = nums.next().unwrap_or(0);
             out.push(line(Kind::Hunk, None, None, raw));

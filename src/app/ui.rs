@@ -13,13 +13,25 @@ pub const SELECTED: Style = Style::new().bg(Color::Rgb(45, 50, 65));
 pub fn block(title: impl Into<String>, focused: bool) -> Block<'static> {
     let title = title.into();
     let b = Block::bordered().border_type(BorderType::Rounded);
-    let b = if title.is_empty() { b } else { b.title(format!(" {title} ")) };
-    if focused { b.border_style(Style::new().fg(ACCENT)) } else { b.border_style(DIM) }
+    let b = if title.is_empty() {
+        b
+    } else {
+        b.title(format!(" {title} "))
+    };
+    if focused {
+        b.border_style(Style::new().fg(ACCENT))
+    } else {
+        b.border_style(DIM)
+    }
 }
 
 pub fn centered(area: Rect, w: u16, h: u16) -> Rect {
-    let [area] = Layout::horizontal([Constraint::Length(w.min(area.width))]).flex(Flex::Center).areas(area);
-    let [area] = Layout::vertical([Constraint::Length(h.min(area.height))]).flex(Flex::Center).areas(area);
+    let [area] = Layout::horizontal([Constraint::Length(w.min(area.width))])
+        .flex(Flex::Center)
+        .areas(area);
+    let [area] = Layout::vertical([Constraint::Length(h.min(area.height))])
+        .flex(Flex::Center)
+        .areas(area);
     area
 }
 
@@ -71,7 +83,9 @@ pub fn login(a: &Option<crate::gh::model::Actor>) -> String {
 /// "2026-11-04T10:00:00Z" -> "3h"
 pub fn ago(ts: &str) -> String {
     let Some(t) = parse_ts(ts) else { return ts.to_string() };
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64);
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs() as i64);
     let s = (now - t).max(0);
     match s {
         0..60 => "now".into(),

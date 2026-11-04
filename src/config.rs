@@ -76,10 +76,10 @@ pub fn load() -> Result<Config> {
         r.path = r.path.as_deref().map(expand_tilde);
     }
     // No repos configured: fall back to the repo we're standing in.
-    if cfg.repos.is_empty() {
-        if let Some(r) = cwd_repo() {
-            cfg.repos.push(r);
-        }
+    if cfg.repos.is_empty()
+        && let Some(r) = cwd_repo()
+    {
+        cfg.repos.push(r);
     }
     Ok(cfg)
 }
@@ -94,10 +94,16 @@ fn validate_name(name: &str) -> Result<()> {
 }
 
 fn cwd_repo() -> Option<RepoConfig> {
-    let out = Command::new("git").args(["remote", "get-url", "origin"]).output().ok()?;
+    let out = Command::new("git")
+        .args(["remote", "get-url", "origin"])
+        .output()
+        .ok()?;
     let url = String::from_utf8(out.stdout).ok()?;
     let name = parse_github_remote(url.trim())?;
-    let top = Command::new("git").args(["rev-parse", "--show-toplevel"]).output().ok()?;
+    let top = Command::new("git")
+        .args(["rev-parse", "--show-toplevel"])
+        .output()
+        .ok()?;
     let path = PathBuf::from(String::from_utf8(top.stdout).ok()?.trim());
     Some(RepoConfig { name, path: Some(path) })
 }
@@ -119,7 +125,10 @@ mod tests {
     #[test]
     fn remotes() {
         assert_eq!(parse_github_remote("git@github.com:a/b.git").as_deref(), Some("a/b"));
-        assert_eq!(parse_github_remote("https://github.com/a/b-c.d").as_deref(), Some("a/b-c.d"));
+        assert_eq!(
+            parse_github_remote("https://github.com/a/b-c.d").as_deref(),
+            Some("a/b-c.d")
+        );
         assert_eq!(parse_github_remote("https://gitlab.com/a/b"), None);
         assert!(validate_name("a/b\"){").is_err());
     }

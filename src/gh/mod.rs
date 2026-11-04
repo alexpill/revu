@@ -28,12 +28,16 @@ fn gh(args: &[&str], stdin: Option<&str>) -> Result<Vec<u8>> {
     let out = child.wait_with_output()?;
     if !out.status.success() {
         // GraphQL errors come back on stdout as JSON, everything else on stderr.
-        if let Ok(v) = serde_json::from_slice::<Value>(&out.stdout) {
-            if let Some(msg) = graphql_errors(&v) {
-                bail!(msg);
-            }
+        if let Ok(v) = serde_json::from_slice::<Value>(&out.stdout)
+            && let Some(msg) = graphql_errors(&v)
+        {
+            bail!(msg);
         }
-        bail!("gh {}: {}", args.first().unwrap_or(&""), String::from_utf8_lossy(&out.stderr).trim());
+        bail!(
+            "gh {}: {}",
+            args.first().unwrap_or(&""),
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
     }
     Ok(out.stdout)
 }
@@ -149,7 +153,10 @@ fn viewed_states(owner: &str, name: &str, number: u64) -> Result<HashMap<String,
     let mut out = HashMap::new();
     let mut after = Value::Null;
     loop {
-        let data = graphql(Q, json!({ "owner": owner, "name": name, "number": number, "after": after }))?;
+        let data = graphql(
+            Q,
+            json!({ "owner": owner, "name": name, "number": number, "after": after }),
+        )?;
         let files = &data["repository"]["pullRequest"]["files"];
         for n in files["nodes"].as_array().ok_or_else(|| anyhow!("no files"))? {
             if let Some(p) = n["path"].as_str() {
@@ -165,7 +172,10 @@ fn viewed_states(owner: &str, name: &str, number: u64) -> Result<HashMap<String,
 
 /// All file paths at `oid` (used when there is no local clone).
 pub fn tree(owner: &str, name: &str, oid: &str) -> Result<Vec<String>> {
-    let out = gh(&["api", &format!("repos/{owner}/{name}/git/trees/{oid}?recursive=1")], None)?;
+    let out = gh(
+        &["api", &format!("repos/{owner}/{name}/git/trees/{oid}?recursive=1")],
+        None,
+    )?;
     let v: Value = serde_json::from_slice(&out)?;
     let entries = v["tree"].as_array().ok_or_else(|| anyhow!("no tree"))?;
     Ok(entries
@@ -177,7 +187,10 @@ pub fn tree(owner: &str, name: &str, oid: &str) -> Result<Vec<String>> {
 
 pub fn file(owner: &str, name: &str, oid: &str, path: &str) -> Result<String> {
     let path = encode_path(path);
-    let out = rest_raw(&format!("repos/{owner}/{name}/contents/{path}?ref={oid}"), "application/vnd.github.raw")?;
+    let out = rest_raw(
+        &format!("repos/{owner}/{name}/contents/{path}?ref={oid}"),
+        "application/vnd.github.raw",
+    )?;
     Ok(String::from_utf8_lossy(&out).into_owned())
 }
 

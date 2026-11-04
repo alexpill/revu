@@ -39,14 +39,26 @@ pub fn render(f: &mut Frame, area: Rect, d: &PrDetail, hl: &Highlighter, scroll:
         ]),
         Line::default(),
     ];
-    let body = if d.body.trim().is_empty() { "_No description provided._" } else { &d.body };
+    let body = if d.body.trim().is_empty() {
+        "_No description provided._"
+    } else {
+        &d.body
+    };
     lines.extend(ui::comment(&d.author, &d.created_at, "".into(), body, hl));
     lines.extend(timeline(d, hl));
 
     let scroll = scroll.min(lines.len().saturating_sub(1) as u16);
-    let p = Paragraph::new(lines).wrap(Wrap { trim: false }).scroll((scroll, 0)).block(ui::block("conversation", true));
+    let p = Paragraph::new(lines)
+        .wrap(Wrap { trim: false })
+        .scroll((scroll, 0))
+        .block(ui::block("conversation", true));
     f.render_widget(p, main);
-    f.render_widget(Paragraph::new(sidebar(d)).wrap(Wrap { trim: true }).block(ui::block("details", false)), side);
+    f.render_widget(
+        Paragraph::new(sidebar(d))
+            .wrap(Wrap { trim: true })
+            .block(ui::block("details", false)),
+        side,
+    );
     scroll
 }
 
@@ -54,7 +66,10 @@ pub fn render(f: &mut Frame, area: Rect, d: &PrDetail, hl: &Highlighter, scroll:
 fn timeline(d: &PrDetail, hl: &Highlighter) -> Vec<Line<'static>> {
     let mut items: Vec<(&str, Vec<Line<'static>>)> = Vec::new();
     for c in &d.comments.nodes {
-        items.push((&c.created_at, ui::comment(&c.author, &c.created_at, "".into(), &c.body, hl)));
+        items.push((
+            &c.created_at,
+            ui::comment(&c.author, &c.created_at, "".into(), &c.body, hl),
+        ));
     }
     for r in &d.reviews.nodes {
         let Some(at) = &r.submitted_at else { continue };
@@ -95,7 +110,11 @@ pub fn thread(t: &Thread, hl: &Highlighter) -> Vec<Line<'static>> {
     let mut lines = vec![Line::from(header)];
     if !t.is_resolved {
         for c in &t.comments.nodes {
-            let badge = if c.state == "PENDING" { "pending".yellow() } else { "".into() };
+            let badge = if c.state == "PENDING" {
+                "pending".yellow()
+            } else {
+                "".into()
+            };
             lines.extend(ui::comment(&c.author, &c.created_at, badge, &c.body, hl));
         }
     } else {
@@ -127,7 +146,11 @@ fn sidebar(d: &PrDetail) -> Vec<Line<'static>> {
         l.push(Line::from("none").style(DIM));
     }
     for (who, s) in states {
-        let badge = if s == "REQUESTED" { "awaiting".yellow() } else { review_state(s) };
+        let badge = if s == "REQUESTED" {
+            "awaiting".yellow()
+        } else {
+            review_state(s)
+        };
         l.push(Line::from(vec![Span::from(format!("{who} ")), badge]));
     }
     if let Some(dec) = &d.review_decision {
@@ -137,12 +160,21 @@ fn sidebar(d: &PrDetail) -> Vec<Line<'static>> {
     l.push(Line::default());
     l.push(section("Assignees"));
     let who: Vec<_> = d.assignees.nodes.iter().map(|a| a.login.clone()).collect();
-    l.push(if who.is_empty() { Line::from("none").style(DIM) } else { Line::from(who.join(", ")) });
+    l.push(if who.is_empty() {
+        Line::from("none").style(DIM)
+    } else {
+        Line::from(who.join(", "))
+    });
 
     if !d.labels.nodes.is_empty() {
         l.push(Line::default());
         l.push(section("Labels"));
-        let labels: Vec<Span> = d.labels.nodes.iter().flat_map(|x| [format!(" {} ", x.name).on_dark_gray(), " ".into()]).collect();
+        let labels: Vec<Span> = d
+            .labels
+            .nodes
+            .iter()
+            .flat_map(|x| [format!(" {} ", x.name).on_dark_gray(), " ".into()])
+            .collect();
         l.push(Line::from(labels));
     }
 
@@ -156,12 +188,18 @@ fn sidebar(d: &PrDetail) -> Vec<Line<'static>> {
 
     if let Some(r) = d.rollup() {
         l.push(Line::default());
-        l.push(Line::from(vec!["Checks ".bold().fg(ui::ACCENT), ui::ci(Some(&r.state))]));
+        l.push(Line::from(vec![
+            "Checks ".bold().fg(ui::ACCENT),
+            ui::ci(Some(&r.state)),
+        ]));
         let mut checks: Vec<_> = r.contexts.iter().flat_map(|c| &c.nodes).collect();
         // Failures first: that's what you look for.
         checks.sort_by_key(|c| !matches!(ui::ci(Some(c.result())).content.as_ref(), "✗"));
         for c in checks {
-            l.push(Line::from(vec![ui::ci(Some(c.result())), format!(" {}", c.label()).into()]));
+            l.push(Line::from(vec![
+                ui::ci(Some(c.result())),
+                format!(" {}", c.label()).into(),
+            ]));
         }
     }
     l

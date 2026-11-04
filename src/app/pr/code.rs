@@ -69,7 +69,9 @@ impl Buffer {
     }
 
     fn chars(&self) -> Vec<char> {
-        self.raw_line(self.cursor).map(|l| l.replace('\t', "    ").chars().collect()).unwrap_or_default()
+        self.raw_line(self.cursor)
+            .map(|l| l.replace('\t', "    ").chars().collect())
+            .unwrap_or_default()
     }
 
     fn move_to(&mut self, line: usize) {
@@ -84,7 +86,13 @@ impl Buffer {
             return;
         }
         let hit = (1..=n)
-            .map(|o| if forward { (self.cursor + o) % n } else { (self.cursor + n - o) % n })
+            .map(|o| {
+                if forward {
+                    (self.cursor + o) % n
+                } else {
+                    (self.cursor + n - o) % n
+                }
+            })
             .find(|&i| self.raw_line(i).is_some_and(|l| l.to_lowercase().contains(&needle)));
         if let Some(i) = hit {
             let line = self.raw_line(i).unwrap().replace('\t', "    ").to_lowercase();
@@ -176,7 +184,10 @@ impl Buffer {
             .take(self.height)
             .map(|(i, code)| {
                 let cur = i == self.cursor;
-                let mut spans = vec![Span::styled(format!("{:>width$} ", i + 1), if cur { ui::ACCENT.into() } else { DIM })];
+                let mut spans = vec![Span::styled(
+                    format!("{:>width$} ", i + 1),
+                    if cur { ui::ACCENT.into() } else { DIM },
+                )];
                 spans.extend(if cur { with_cursor(code, self.col) } else { code.clone() });
                 let line = Line::from(spans);
                 if cur { line.patch_style(SELECTED) } else { line }
@@ -184,7 +195,10 @@ impl Buffer {
             .collect();
         f.render_widget(Paragraph::new(rendered), code_area);
         if let (Some(p), Some(input)) = (prompt, &self.input) {
-            f.render_widget(Paragraph::new(Line::from(vec!["/".cyan(), input.clone().into(), "█".dark_gray()])), p);
+            f.render_widget(
+                Paragraph::new(Line::from(vec!["/".cyan(), input.clone().into(), "█".dark_gray()])),
+                p,
+            );
         }
     }
 }

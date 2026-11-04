@@ -27,7 +27,11 @@ pub struct IssueScreen {
 
 impl IssueScreen {
     pub fn open(key: Key, ctx: &mut Ctx) -> Self {
-        let s = Self { key, detail: None, scroll: 0 };
+        let s = Self {
+            key,
+            detail: None,
+            scroll: 0,
+        };
         s.load(ctx);
         s
     }
@@ -74,11 +78,22 @@ impl IssueScreen {
     pub fn render(&mut self, f: &mut Frame, area: Rect, ctx: &Ctx) {
         let title = format!("{} #{}", ctx.repo(self.key.0), self.key.1);
         let d = match &self.detail {
-            None => return f.render_widget(Paragraph::new(" loading…").dark_gray().block(ui::block(title, true)), area),
-            Some(Err(e)) => return f.render_widget(Paragraph::new(e.clone()).red().block(ui::block(title, true)), area),
+            None => {
+                return f.render_widget(
+                    Paragraph::new(" loading…").dark_gray().block(ui::block(title, true)),
+                    area,
+                );
+            }
+            Some(Err(e)) => {
+                return f.render_widget(Paragraph::new(e.clone()).red().block(ui::block(title, true)), area);
+            }
             Some(Ok(d)) => d,
         };
-        let state = if d.state == "OPEN" { " open ".on_green().black() } else { " closed ".on_magenta().black() };
+        let state = if d.state == "OPEN" {
+            " open ".on_green().black()
+        } else {
+            " closed ".on_magenta().black()
+        };
         let mut lines = vec![
             Line::from(vec![state, " ".into(), d.title.clone().bold()]),
             Line::from(vec![
@@ -86,7 +101,12 @@ impl IssueScreen {
                 format!(" opened {} ago", ui::ago(&d.created_at)).dark_gray(),
             ]),
         ];
-        let labels: Vec<Span> = d.labels.nodes.iter().map(|l| format!(" {} ", l.name).on_dark_gray()).collect();
+        let labels: Vec<Span> = d
+            .labels
+            .nodes
+            .iter()
+            .map(|l| format!(" {} ", l.name).on_dark_gray())
+            .collect();
         if !labels.is_empty() {
             lines.push(Line::from(labels));
         }
@@ -100,7 +120,10 @@ impl IssueScreen {
             lines.extend(ui::comment(&c.author, &c.created_at, "".into(), &c.body, &ctx.hl));
         }
         self.scroll = self.scroll.min(lines.len().saturating_sub(1) as u16);
-        let p = Paragraph::new(lines).wrap(Wrap { trim: false }).scroll((self.scroll, 0)).block(ui::block(title, true));
+        let p = Paragraph::new(lines)
+            .wrap(Wrap { trim: false })
+            .scroll((self.scroll, 0))
+            .block(ui::block(title, true));
         f.render_widget(p, area);
     }
 }

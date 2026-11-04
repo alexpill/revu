@@ -80,7 +80,11 @@ impl Server {
             .with_context(|| format!("could not start `{}` (not installed? see [lsp] in the config)", cmd[0]))?;
         let stdin = child.stdin.take().unwrap();
         let stdout = child.stdout.take().unwrap();
-        let shared = Arc::new(Mutex::new(Shared { stdin, ready: false, queue: Vec::new() }));
+        let shared = Arc::new(Mutex::new(Shared {
+            stdin,
+            ready: false,
+            queue: Vec::new(),
+        }));
 
         let init_id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
         let root_uri = uri(root);
@@ -127,7 +131,10 @@ impl Server {
                 match id {
                     Some(id) if id == init_id => {
                         let mut s = reader_shared.lock().unwrap();
-                        let _ = write(&mut s.stdin, &json!({ "jsonrpc": "2.0", "method": "initialized", "params": {} }));
+                        let _ = write(
+                            &mut s.stdin,
+                            &json!({ "jsonrpc": "2.0", "method": "initialized", "params": {} }),
+                        );
                         for m in std::mem::take(&mut s.queue) {
                             let _ = write(&mut s.stdin, &m);
                         }
@@ -144,7 +151,11 @@ impl Server {
                 }
             }
         });
-        Ok(Self { child, shared, opened: HashSet::new() })
+        Ok(Self {
+            child,
+            shared,
+            opened: HashSet::new(),
+        })
     }
 
     fn send(&self, msg: Value) {
@@ -167,7 +178,8 @@ impl Server {
     /// Sends a position request (definition/references/hover); returns its id.
     pub fn request(&self, method: &str, path: &Path, line: u32, character: u32) -> i64 {
         let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-        let mut params = json!({ "textDocument": { "uri": uri(path) }, "position": { "line": line, "character": character } });
+        let mut params =
+            json!({ "textDocument": { "uri": uri(path) }, "position": { "line": line, "character": character } });
         if method == "textDocument/references" {
             params["context"] = json!({ "includeDeclaration": false });
         }
@@ -220,12 +232,13 @@ fn path_from_uri(uri: &str) -> Option<PathBuf> {
     let mut out = Vec::with_capacity(raw.len());
     let mut i = 0;
     while i < raw.len() {
-        if raw[i] == b'%' && i + 2 < raw.len() {
-            if let Ok(b) = u8::from_str_radix(std::str::from_utf8(&raw[i + 1..i + 3]).ok()?, 16) {
-                out.push(b);
-                i += 3;
-                continue;
-            }
+        if raw[i] == b'%'
+            && i + 2 < raw.len()
+            && let Ok(b) = u8::from_str_radix(std::str::from_utf8(&raw[i + 1..i + 3]).ok()?, 16)
+        {
+            out.push(b);
+            i += 3;
+            continue;
         }
         out.push(raw[i]);
         i += 1;
@@ -251,7 +264,11 @@ pub fn locations(v: &Value) -> Vec<Location> {
                 None => (l.get("uri")?, &l["range"]),
             };
             let start = &range["start"];
-            Some((path_from_uri(uri.as_str()?)?, start["line"].as_u64()? as u32, start["character"].as_u64()? as u32))
+            Some((
+                path_from_uri(uri.as_str()?)?,
+                start["line"].as_u64()? as u32,
+                start["character"].as_u64()? as u32,
+            ))
         })
         .collect()
 }
@@ -310,7 +327,10 @@ pub fn display_col(line: &str, utf16_col: u32) -> usize {
 
 pub fn read_line(path: &Path, line: u32) -> Result<String> {
     let text = std::fs::read_to_string(path)?;
-    text.lines().nth(line as usize).map(String::from).ok_or_else(|| anyhow!("line {line} out of range"))
+    text.lines()
+        .nth(line as usize)
+        .map(String::from)
+        .ok_or_else(|| anyhow!("line {line} out of range"))
 }
 
 #[cfg(test)]
@@ -334,7 +354,10 @@ mod tests {
         assert_eq!(locations(&v), vec![(PathBuf::from("/x.rs"), 3, 7)]);
         let v = json!({ "uri": "file:///y.rs", "range": { "start": { "line": 1, "character": 0 } } });
         assert_eq!(locations(&v), vec![(PathBuf::from("/y.rs"), 1, 0)]);
-        assert_eq!(hover_text(&json!({ "contents": { "kind": "markdown", "value": "fn x()" } })).as_deref(), Some("fn x()"));
+        assert_eq!(
+            hover_text(&json!({ "contents": { "kind": "markdown", "value": "fn x()" } })).as_deref(),
+            Some("fn x()")
+        );
     }
 
     #[test]

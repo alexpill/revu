@@ -16,12 +16,12 @@ use crate::highlight::Highlighter;
 use crate::source::Source;
 use anyhow::Result;
 use ratatui::DefaultTerminal;
+use ratatui::Frame;
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::layout::{Constraint, Layout};
 use ratatui::style::Stylize;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Clear, Paragraph};
-use ratatui::Frame;
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::mpsc::{Receiver, Sender, channel};
@@ -49,7 +49,11 @@ pub enum Msg {
 /// Something that needs the terminal, run between frames.
 pub enum External {
     /// Write a comment in $EDITOR, then queue `mutation` with it as body.
-    Compose { key: Key, pr_id: String, mutation: Mutation },
+    Compose {
+        key: Key,
+        pr_id: String,
+        mutation: Mutation,
+    },
     /// Open a file at a 1-based line in $EDITOR.
     Open { path: PathBuf, line: u32 },
 }
@@ -119,11 +123,19 @@ impl Ctx {
 
     pub fn mutate(&mut self, key: Key, pr_id: &str, mutation: Mutation) {
         self.inflight += 1;
-        let _ = self.worker.send(Job { key, pr_id: pr_id.to_string(), mutation });
+        let _ = self.worker.send(Job {
+            key,
+            pr_id: pr_id.to_string(),
+            mutation,
+        });
     }
 
     pub fn compose(&mut self, key: Key, pr_id: &str, mutation: Mutation) {
-        self.external = Some(External::Compose { key, pr_id: pr_id.to_string(), mutation });
+        self.external = Some(External::Compose {
+            key,
+            pr_id: pr_id.to_string(),
+            mutation,
+        });
     }
 
     pub fn open_in_editor(&mut self, path: PathBuf, line: u32) {
@@ -174,7 +186,14 @@ impl App {
         let worker = mutation::spawn_worker(move |job: Job<Key>, res| {
             let _ = done_tx.send(Msg::Mutated(job.key, job.mutation, res));
         });
-        let sources = cfg.repos.iter().map(|r| Source { repo: r.name.clone(), local: r.path.clone() }).collect();
+        let sources = cfg
+            .repos
+            .iter()
+            .map(|r| Source {
+                repo: r.name.clone(),
+                local: r.path.clone(),
+            })
+            .collect();
         let hl = Highlighter::new(cfg.theme.as_deref());
         let mut ctx = Ctx {
             cfg,
@@ -188,7 +207,14 @@ impl App {
             external: None,
         };
         let main = main_screen::MainScreen::new(&mut ctx);
-        Self { ctx, rx, main, stack: Vec::new(), help: false, quit: false }
+        Self {
+            ctx,
+            rx,
+            main,
+            stack: Vec::new(),
+            help: false,
+            quit: false,
+        }
     }
 
     pub fn run(mut self, terminal: &mut DefaultTerminal) -> Result<()> {
@@ -348,7 +374,10 @@ pub fn with_terminal_released(cmd: &mut Command) -> Result<()> {
 /// `$EDITOR` (shell-split, e.g. "nvim -u NONE") with extra args.
 pub fn editor(args: &[&str]) -> Command {
     let mut cmd = Command::new("sh");
-    cmd.arg("-c").arg("exec ${VISUAL:-${EDITOR:-vi}} \"$@\"").arg("sh").args(args);
+    cmd.arg("-c")
+        .arg("exec ${VISUAL:-${EDITOR:-vi}} \"$@\"")
+        .arg("sh")
+        .args(args);
     cmd
 }
 

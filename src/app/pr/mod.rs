@@ -172,7 +172,12 @@ impl PrScreen {
     fn here(&self) -> Jump {
         match self.tab {
             0 => Jump::Conversation,
-            FILES_TAB => Jump::Files(self.files.as_ref().and_then(|f| f.as_ref().ok()).map_or((0, 0, 0), |f| f.position())),
+            FILES_TAB => Jump::Files(
+                self.files
+                    .as_ref()
+                    .and_then(|f| f.as_ref().ok())
+                    .map_or((0, 0, 0), |f| f.position()),
+            ),
             t => {
                 let b = &self.buffers[t - FIRST_BUFFER];
                 Jump::Buffer(b.path.clone(), b.cursor, b.col)
@@ -205,12 +210,18 @@ impl PrScreen {
             self.tab = FIRST_BUFFER + i;
             return;
         }
-        let Some(oid) = self.detail().map(|d| d.head_ref_oid.clone()) else { return };
+        let Some(oid) = self.detail().map(|d| d.head_ref_oid.clone()) else {
+            return;
+        };
         self.buffers.push(Buffer::loading(path.clone(), line, col));
         self.tab = FIRST_BUFFER + self.buffers.len() - 1;
         let (key, src) = (self.key, ctx.sources[self.key.0].clone());
         ctx.spawn(move || {
-            let text = if path.starts_with('/') { std::fs::read_to_string(&path).map_err(Into::into) } else { src.read(&oid, &path) };
+            let text = if path.starts_with('/') {
+                std::fs::read_to_string(&path).map_err(Into::into)
+            } else {
+                src.read(&oid, &path)
+            };
             Msg::FileText(key, path, text)
         });
     }
@@ -226,7 +237,9 @@ impl PrScreen {
             Some(Err(e)) => ctx.error(e.clone()),
             None => {
                 let first = self.pending_ask.replace(ask).is_none();
-                let Some(oid) = self.detail().map(|d| d.head_ref_oid.clone()) else { return };
+                let Some(oid) = self.detail().map(|d| d.head_ref_oid.clone()) else {
+                    return;
+                };
                 if first {
                     let (key, src) = (self.key, ctx.sources[self.key.0].clone());
                     ctx.spawn(move || Msg::Worktree(key, src.worktree(key.1, &oid)));
@@ -242,7 +255,11 @@ impl PrScreen {
     }
 
     fn send_ask(&mut self, root: &Path, ask: Ask, ctx: &mut Ctx) -> Result<()> {
-        let abs = if ask.path.starts_with('/') { PathBuf::from(&ask.path) } else { root.join(&ask.path) };
+        let abs = if ask.path.starts_with('/') {
+            PathBuf::from(&ask.path)
+        } else {
+            root.join(&ask.path)
+        };
         let (cmd, lang) = lsp::server_for(&ask.path, &ctx.cfg.lsp)
             .ok_or_else(|| anyhow!("no language server known for {} (add one under [lsp])", ask.path))?;
         if !self.servers.contains_key(&cmd) {
@@ -317,11 +334,21 @@ impl PrScreen {
     /// Opens the current position in $EDITOR, in the worktree when there is one.
     fn edit_here(&mut self, ctx: &mut Ctx) {
         let here = match self.tab {
-            FILES_TAB => self.files.as_ref().and_then(|f| f.as_ref().ok()).and_then(|f| f.head_position()).map(|(p, l, _)| (p, l)),
-            t if t >= FIRST_BUFFER => self.buffers.get(t - FIRST_BUFFER).map(|b| (b.path.clone(), b.cursor as u32)),
+            FILES_TAB => self
+                .files
+                .as_ref()
+                .and_then(|f| f.as_ref().ok())
+                .and_then(|f| f.head_position())
+                .map(|(p, l, _)| (p, l)),
+            t if t >= FIRST_BUFFER => self
+                .buffers
+                .get(t - FIRST_BUFFER)
+                .map(|b| (b.path.clone(), b.cursor as u32)),
             _ => None,
         };
-        let Some((path, line)) = here else { return ctx.info("nothing to open here") };
+        let Some((path, line)) = here else {
+            return ctx.info("nothing to open here");
+        };
         let base = match (&self.worktree, &ctx.sources[self.key.0].local) {
             _ if path.starts_with('/') => PathBuf::new(),
             (Some(Ok(wt)), _) => wt.clone(),
@@ -335,7 +362,9 @@ impl PrScreen {
         match &self.tree {
             Some(paths) => self.picker = Some((Picker::new("files", paths.clone()), PickFor::File)),
             None => {
-                let Some(oid) = self.detail().map(|d| d.head_ref_oid.clone()) else { return };
+                let Some(oid) = self.detail().map(|d| d.head_ref_oid.clone()) else {
+                    return;
+                };
                 let (key, src) = (self.key, ctx.sources[self.key.0].clone());
                 ctx.spawn(move || Msg::Tree(key, src.list(&oid)));
                 ctx.info("loading file list…");
@@ -397,7 +426,14 @@ impl PrScreen {
             if let (KeyCode::Char(c), Some(d)) = (k.code, self.detail()) {
                 let id = d.id.clone();
                 match SUBMIT.iter().find(|(key, ..)| *key == c) {
-                    Some((_, _, Some(event))) => ctx.compose(self.key, &id, Mutation::Submit { event, body: String::new() }),
+                    Some((_, _, Some(event))) => ctx.compose(
+                        self.key,
+                        &id,
+                        Mutation::Submit {
+                            event,
+                            body: String::new(),
+                        },
+                    ),
                     Some((_, _, None)) => ctx.mutate(self.key, &id, Mutation::DiscardReview),
                     None => {}
                 }
@@ -500,7 +536,12 @@ impl PrScreen {
             Layout::vertical([Constraint::Length(1), Constraint::Length(1), Constraint::Fill(1)]).areas(area);
         let repo = ctx.repo(self.key.0).to_string();
         let d = match &self.detail {
-            None => return f.render_widget(Paragraph::new(format!(" {repo} #{} loading…", self.key.1)).dark_gray(), head),
+            None => {
+                return f.render_widget(
+                    Paragraph::new(format!(" {repo} #{} loading…", self.key.1)).dark_gray(),
+                    head,
+                );
+            }
             Some(Err(e)) => return f.render_widget(Paragraph::new(format!(" {e}")).red(), head),
             Some(Ok(d)) => d,
         };
@@ -525,7 +566,10 @@ impl PrScreen {
             let name = b.path.rsplit('/').next().unwrap_or(&b.path);
             titles.push(Line::from(format!(" {} {name} ", i + FIRST_BUFFER + 1)));
         }
-        let tabs = Tabs::new(titles).select(self.tab).divider("").highlight_style(Style::new().fg(ui::ACCENT).bold().reversed());
+        let tabs = Tabs::new(titles)
+            .select(self.tab)
+            .divider("")
+            .highlight_style(Style::new().fg(ui::ACCENT).bold().reversed());
         f.render_widget(tabs, tabs_area);
 
         match self.tab {
@@ -540,7 +584,11 @@ impl PrScreen {
 
         if self.submit_menu {
             let mut lines = vec![Line::from(format!("{pending} pending comment(s)")).dark_gray()];
-            lines.extend(SUBMIT.iter().map(|(k, label, _)| Line::from(vec![format!(" {k} ").cyan().bold(), (*label).into()])));
+            lines.extend(
+                SUBMIT
+                    .iter()
+                    .map(|(k, label, _)| Line::from(vec![format!(" {k} ").cyan().bold(), (*label).into()])),
+            );
             let area = ui::centered(f.area(), 34, lines.len() as u16 + 2);
             f.render_widget(Clear, area);
             f.render_widget(Paragraph::new(lines).block(ui::block("submit review", true)), area);
@@ -552,7 +600,12 @@ impl PrScreen {
             let lines = crate::markdown::render(text, &ctx.hl);
             let area = ui::centered(f.area(), 90, lines.len() as u16 + 2);
             f.render_widget(Clear, area);
-            f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }).block(ui::block("hover", true)), area);
+            f.render_widget(
+                Paragraph::new(lines)
+                    .wrap(Wrap { trim: false })
+                    .block(ui::block("hover", true)),
+                area,
+            );
         }
     }
 }

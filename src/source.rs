@@ -15,9 +15,18 @@ pub struct Source {
 }
 
 fn git(dir: &Path, args: &[&str]) -> Result<String> {
-    let out = Command::new("git").arg("-C").arg(dir).args(args).output().context("failed to run git")?;
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(args)
+        .output()
+        .context("failed to run git")?;
     if !out.status.success() {
-        bail!("git {}: {}", args.join(" "), String::from_utf8_lossy(&out.stderr).trim());
+        bail!(
+            "git {}: {}",
+            args.join(" "),
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
     }
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
@@ -45,24 +54,34 @@ impl Source {
     pub fn fetch_pr(&self, number: u64) -> Result<()> {
         let Some(dir) = &self.local else { return Ok(()) };
         let remote = self.remote(dir)?;
-        git(dir, &["fetch", "--quiet", "--no-tags", &remote, &format!("refs/pull/{number}/head")]).map(drop)
+        git(
+            dir,
+            &[
+                "fetch",
+                "--quiet",
+                "--no-tags",
+                &remote,
+                &format!("refs/pull/{number}/head"),
+            ],
+        )
+        .map(drop)
     }
 
     pub fn read(&self, oid: &str, path: &str) -> Result<String> {
-        if let Some(dir) = &self.local {
-            if let Ok(s) = git(dir, &["show", &format!("{oid}:{path}")]) {
-                return Ok(s);
-            }
+        if let Some(dir) = &self.local
+            && let Ok(s) = git(dir, &["show", &format!("{oid}:{path}")])
+        {
+            return Ok(s);
         }
         let (owner, name) = self.owner_name();
         gh::file(owner, name, oid, path)
     }
 
     pub fn list(&self, oid: &str) -> Result<Vec<String>> {
-        if let Some(dir) = &self.local {
-            if let Ok(s) = git(dir, &["ls-tree", "-r", "--name-only", oid]) {
-                return Ok(s.lines().map(String::from).collect());
-            }
+        if let Some(dir) = &self.local
+            && let Ok(s) = git(dir, &["ls-tree", "-r", "--name-only", oid])
+        {
+            return Ok(s.lines().map(String::from).collect());
         }
         let (owner, name) = self.owner_name();
         gh::tree(owner, name, oid)
@@ -70,14 +89,23 @@ impl Source {
 
     /// A detached checkout of `oid` for language servers, reused across runs.
     pub fn worktree(&self, number: u64, oid: &str) -> Result<PathBuf> {
-        let dir = self.local.as_ref().ok_or_else(|| anyhow!("{} has no local path in the config", self.repo))?;
-        let wt = config::cache_dir().join("worktrees").join(self.repo.replace('/', "__")).join(format!("pr-{number}"));
+        let dir = self
+            .local
+            .as_ref()
+            .ok_or_else(|| anyhow!("{} has no local path in the config", self.repo))?;
+        let wt = config::cache_dir()
+            .join("worktrees")
+            .join(self.repo.replace('/', "__"))
+            .join(format!("pr-{number}"));
         self.fetch_pr(number)?;
         if wt.exists() {
             git(&wt, &["checkout", "--quiet", "--detach", oid])?;
         } else {
             git(dir, &["worktree", "prune"])?;
-            git(dir, &["worktree", "add", "--quiet", "--detach", &wt.to_string_lossy(), oid])?;
+            git(
+                dir,
+                &["worktree", "add", "--quiet", "--detach", &wt.to_string_lossy(), oid],
+            )?;
         }
         Ok(wt)
     }

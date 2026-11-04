@@ -10,15 +10,35 @@ use std::sync::mpsc::{Sender, channel};
 
 #[derive(Debug, Clone)]
 pub enum Mutation {
-    SetViewed { path: String, viewed: bool },
+    SetViewed {
+        path: String,
+        viewed: bool,
+    },
     /// Added to the viewer's pending review (created on demand).
-    AddThread { path: String, line: u32, side: &'static str, start_line: Option<u32>, body: String },
-    Reply { thread_id: String, body: String },
-    SetResolved { thread_id: String, resolved: bool },
+    AddThread {
+        path: String,
+        line: u32,
+        side: &'static str,
+        start_line: Option<u32>,
+        body: String,
+    },
+    Reply {
+        thread_id: String,
+        body: String,
+    },
+    SetResolved {
+        thread_id: String,
+        resolved: bool,
+    },
     /// event: COMMENT | APPROVE | REQUEST_CHANGES
-    Submit { event: &'static str, body: String },
+    Submit {
+        event: &'static str,
+        body: String,
+    },
     DiscardReview,
-    Comment { body: String },
+    Comment {
+        body: String,
+    },
 }
 
 impl Mutation {
@@ -61,11 +81,23 @@ pub fn spawn_worker<K: Send + 'static>(done: impl Fn(Job<K>, Result<()>) + Send 
 fn run(pr: &str, m: &Mutation) -> Result<()> {
     match m {
         Mutation::SetViewed { path, viewed } => {
-            let op = if *viewed { "markFileAsViewed" } else { "unmarkFileAsViewed" };
-            let q = format!("mutation($pr: ID!, $path: String!) {{ {op}(input: {{pullRequestId: $pr, path: $path}}) {{ clientMutationId }} }}");
+            let op = if *viewed {
+                "markFileAsViewed"
+            } else {
+                "unmarkFileAsViewed"
+            };
+            let q = format!(
+                "mutation($pr: ID!, $path: String!) {{ {op}(input: {{pullRequestId: $pr, path: $path}}) {{ clientMutationId }} }}"
+            );
             graphql(&q, json!({ "pr": pr, "path": path }))?;
         }
-        Mutation::AddThread { path, line, side, start_line, body } => {
+        Mutation::AddThread {
+            path,
+            line,
+            side,
+            start_line,
+            body,
+        } => {
             let review = pending_review(pr)?.map_or_else(|| create_review(pr), Ok)?;
             graphql(
                 r#"mutation($review: ID!, $path: String!, $line: Int!, $side: DiffSide!, $startLine: Int, $startSide: DiffSide, $body: String!) {
@@ -84,7 +116,11 @@ fn run(pr: &str, m: &Mutation) -> Result<()> {
             )?;
         }
         Mutation::SetResolved { thread_id, resolved } => {
-            let op = if *resolved { "resolveReviewThread" } else { "unresolveReviewThread" };
+            let op = if *resolved {
+                "resolveReviewThread"
+            } else {
+                "unresolveReviewThread"
+            };
             let q = format!("mutation($id: ID!) {{ {op}(input: {{threadId: $id}}) {{ clientMutationId }} }}");
             graphql(&q, json!({ "id": thread_id }))?;
         }

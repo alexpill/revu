@@ -22,8 +22,17 @@ const THREAD_BG: Color = Color::Rgb(28, 30, 40);
 const GUTTER: usize = 12;
 
 const GENERATED: &[&str] = &[
-    "Cargo.lock", "package-lock.json", "yarn.lock", "pnpm-lock.yaml", "flake.lock", "poetry.lock", "uv.lock",
-    "go.sum", "Gemfile.lock", "composer.lock", "bun.lockb",
+    "Cargo.lock",
+    "package-lock.json",
+    "yarn.lock",
+    "pnpm-lock.yaml",
+    "flake.lock",
+    "poetry.lock",
+    "uv.lock",
+    "go.sum",
+    "Gemfile.lock",
+    "composer.lock",
+    "bun.lockb",
 ];
 
 pub struct FileEntry {
@@ -155,7 +164,9 @@ impl FilesView {
     }
 
     fn line_chars(&self) -> Vec<char> {
-        self.current_line().map(|l| l.text.replace('\t', "    ").chars().collect()).unwrap_or_default()
+        self.current_line()
+            .map(|l| l.text.replace('\t', "    ").chars().collect())
+            .unwrap_or_default()
     }
 
     fn move_cursor(&mut self, delta: isize) {
@@ -192,8 +203,12 @@ impl FilesView {
                     self.cursor = 0;
                     Outcome::Handled
                 }
-                KeyCode::Char('d') => self.head_position().map_or(Outcome::Handled, |(p, l, c)| Outcome::Definition(p, l, c)),
-                KeyCode::Char('r') => self.head_position().map_or(Outcome::Handled, |(p, l, c)| Outcome::References(p, l, c)),
+                KeyCode::Char('d') => self
+                    .head_position()
+                    .map_or(Outcome::Handled, |(p, l, c)| Outcome::Definition(p, l, c)),
+                KeyCode::Char('r') => self
+                    .head_position()
+                    .map_or(Outcome::Handled, |(p, l, c)| Outcome::References(p, l, c)),
                 _ => Outcome::Handled,
             };
         }
@@ -222,7 +237,9 @@ impl FilesView {
             KeyCode::Char('d') if ctrl => self.move_cursor(self.height as isize / 2),
             KeyCode::Char('u') if ctrl => self.move_cursor(-(self.height as isize) / 2),
             KeyCode::Char('h') | KeyCode::Left => self.col = self.col.saturating_sub(1),
-            KeyCode::Char('l') | KeyCode::Right => self.col = (self.col + 1).min(self.line_chars().len().saturating_sub(1)),
+            KeyCode::Char('l') | KeyCode::Right => {
+                self.col = (self.col + 1).min(self.line_chars().len().saturating_sub(1))
+            }
             KeyCode::Char('w') => self.col = word_motion(&self.line_chars(), self.col, true),
             KeyCode::Char('b') => self.col = word_motion(&self.line_chars(), self.col, false),
             KeyCode::Char('0') => self.col = 0,
@@ -232,20 +249,36 @@ impl FilesView {
             KeyCode::Char('}') => self.jump_hunk(true),
             KeyCode::Char('{') => self.jump_hunk(false),
             KeyCode::Char('K') => {
-                return self.head_position().map_or(Outcome::Handled, |(p, l, c)| Outcome::Hover(p, l, c));
+                return self
+                    .head_position()
+                    .map_or(Outcome::Handled, |(p, l, c)| Outcome::Hover(p, l, c));
             }
             KeyCode::Char('v') => self.anchor = if self.anchor.is_some() { None } else { Some(self.cursor) },
             KeyCode::Char('c') => self.comment(ctx, key, detail),
             KeyCode::Char('r') => {
                 if let (Some(t), Some(d)) = (self.current_thread(), detail) {
                     let thread_id = d.review_threads.nodes[t].id.clone();
-                    ctx.compose(key, &d.id, Mutation::Reply { thread_id, body: String::new() });
+                    ctx.compose(
+                        key,
+                        &d.id,
+                        Mutation::Reply {
+                            thread_id,
+                            body: String::new(),
+                        },
+                    );
                 }
             }
             KeyCode::Char('R') => {
                 if let (Some(t), Some(d)) = (self.current_thread(), detail) {
                     let t = &d.review_threads.nodes[t];
-                    ctx.mutate(key, &d.id, Mutation::SetResolved { thread_id: t.id.clone(), resolved: !t.is_resolved });
+                    ctx.mutate(
+                        key,
+                        &d.id,
+                        Mutation::SetResolved {
+                            thread_id: t.id.clone(),
+                            resolved: !t.is_resolved,
+                        },
+                    );
                 }
             }
             _ => return Outcome::Unhandled,
@@ -256,10 +289,19 @@ impl FilesView {
     /// Marks viewed locally right away (GitHub sync is queued) and moves on to
     /// the next unviewed file, so a review can be ticked through quickly.
     fn toggle_viewed(&mut self, ctx: &mut Ctx, key: Key, detail: Option<&PrDetail>) {
-        let (Some(d), Some(f)) = (detail, self.files.get_mut(self.sel)) else { return };
+        let (Some(d), Some(f)) = (detail, self.files.get_mut(self.sel)) else {
+            return;
+        };
         f.viewed = !f.viewed;
         let viewed = f.viewed;
-        ctx.mutate(key, &d.id, Mutation::SetViewed { path: f.path.clone(), viewed });
+        ctx.mutate(
+            key,
+            &d.id,
+            Mutation::SetViewed {
+                path: f.path.clone(),
+                viewed,
+            },
+        );
         if viewed {
             let n = self.files.len();
             if let Some(next) = (1..n).map(|o| (self.sel + o) % n).find(|&i| !self.files[i].viewed) {
@@ -284,7 +326,17 @@ impl FilesView {
             _ => (line, None),
         };
         let path = self.files[self.sel].path.clone();
-        ctx.compose(key, &d.id, Mutation::AddThread { path, line, side, start_line, body: String::new() });
+        ctx.compose(
+            key,
+            &d.id,
+            Mutation::AddThread {
+                path,
+                line,
+                side,
+                start_line,
+                body: String::new(),
+            },
+        );
     }
 
     pub fn render(&mut self, f: &mut Frame, area: Rect, detail: Option<&PrDetail>, hl: &Highlighter) {
@@ -296,7 +348,11 @@ impl FilesView {
 
     fn render_list(&mut self, f: &mut Frame, area: Rect, detail: Option<&PrDetail>) {
         let mut comments: HashMap<&str, usize> = HashMap::new();
-        for t in detail.iter().flat_map(|d| &d.review_threads.nodes).filter(|t| !t.is_resolved) {
+        for t in detail
+            .iter()
+            .flat_map(|d| &d.review_threads.nodes)
+            .filter(|t| !t.is_resolved)
+        {
             *comments.entry(t.path.as_str()).or_default() += 1;
         }
         let items: Vec<ListItem> = self
@@ -310,7 +366,10 @@ impl FilesView {
                     "renamed" => "R ".yellow(),
                     _ => "M ".blue(),
                 };
-                let (dir, name) = file.path.rsplit_once('/').map_or(("", file.path.as_str()), |(d, n)| (d, n));
+                let (dir, name) = file
+                    .path
+                    .rsplit_once('/')
+                    .map_or(("", file.path.as_str()), |(d, n)| (d, n));
                 let mut spans = vec![mark, status];
                 if !dir.is_empty() {
                     spans.push(format!("{dir}/").dark_gray());
@@ -325,22 +384,33 @@ impl FilesView {
             .collect();
         let title = format!("files {}/{} viewed", self.viewed_count(), self.files.len());
         self.list.select(Some(self.sel));
-        let list = List::new(items).highlight_style(SELECTED).block(ui::block(title, !self.focus_diff));
+        let list = List::new(items)
+            .highlight_style(SELECTED)
+            .block(ui::block(title, !self.focus_diff));
         f.render_stateful_widget(list, area, &mut self.list);
     }
 
     fn build_rows(&self, detail: Option<&PrDetail>, hl: &Highlighter, width: usize) -> Vec<Row> {
-        let Some(file) = self.files.get(self.sel) else { return Vec::new() };
+        let Some(file) = self.files.get(self.sel) else {
+            return Vec::new();
+        };
         let mut rows = Vec::new();
         if !file.has_patch {
-            rows.push(Row::Note(" no diff to show (binary file, or too large for GitHub's API)".dark_gray().into()));
+            rows.push(Row::Note(
+                " no diff to show (binary file, or too large for GitHub's API)"
+                    .dark_gray()
+                    .into(),
+            ));
         } else if file.folded {
             rows.push(Row::Note(" generated file folded, z to unfold".dark_gray().into()));
             return rows;
         }
 
-        let threads: Vec<(usize, &crate::gh::model::Thread)> =
-            detail.iter().flat_map(|d| d.review_threads.nodes.iter().enumerate()).filter(|(_, t)| t.path == file.path).collect();
+        let threads: Vec<(usize, &crate::gh::model::Thread)> = detail
+            .iter()
+            .flat_map(|d| d.review_threads.nodes.iter().enumerate())
+            .filter(|(_, t)| t.path == file.path)
+            .collect();
         let thread_rows = |t: usize, th: &crate::gh::model::Thread, rows: &mut Vec<Row>| {
             for line in conversation::thread(th, hl) {
                 for l in wrap(line, width.saturating_sub(GUTTER + 2)) {
@@ -376,7 +446,18 @@ impl FilesView {
         if file.hl.is_none() {
             let code = file.lines.iter().filter(|l| is_code(l.kind)).map(|l| l.text.as_str());
             let mut styled = hl.file(&file.path, code).into_iter();
-            file.hl = Some(file.lines.iter().map(|l| if is_code(l.kind) { styled.next().unwrap_or_default() } else { Vec::new() }).collect());
+            file.hl = Some(
+                file.lines
+                    .iter()
+                    .map(|l| {
+                        if is_code(l.kind) {
+                            styled.next().unwrap_or_default()
+                        } else {
+                            Vec::new()
+                        }
+                    })
+                    .collect(),
+            );
         }
         let mut title = vec![format!(" {} ", file.path).bold()];
         if let Some(prev) = &file.prev {
@@ -444,13 +525,19 @@ fn diff_line(l: &DiffLine, code: &StyledLine, cursor: Option<usize>) -> Line<'st
         Kind::Add => ("+", Some(ADD_BG)),
         Kind::Del => ("-", Some(DEL_BG)),
         Kind::Hunk | Kind::Meta => {
-            return Line::from(vec![Span::raw(" ".repeat(GUTTER)), l.text.clone().fg(ui::ACCENT).add_modifier(Modifier::DIM)]);
+            return Line::from(vec![
+                Span::raw(" ".repeat(GUTTER)),
+                l.text.clone().fg(ui::ACCENT).add_modifier(Modifier::DIM),
+            ]);
         }
         Kind::Context => (" ", None),
     };
     let mut spans = vec![
         Span::styled(format!("{} {} ", num(l.old), num(l.new)), DIM),
-        Span::styled(format!("{marker} "), Style::new().fg(if l.kind == Kind::Add { Color::Green } else { Color::Red })),
+        Span::styled(
+            format!("{marker} "),
+            Style::new().fg(if l.kind == Kind::Add { Color::Green } else { Color::Red }),
+        ),
     ];
     spans.extend(match cursor {
         Some(c) => with_cursor(code, c),
@@ -497,7 +584,10 @@ pub fn with_cursor(spans: &[Span<'static>], col: usize) -> Vec<Span<'static>> {
             let chars: Vec<char> = s.content.chars().collect();
             let at = col - pos;
             out.push(Span::styled(chars[..at].iter().collect::<String>(), s.style));
-            out.push(Span::styled(chars[at].to_string(), s.style.add_modifier(Modifier::REVERSED)));
+            out.push(Span::styled(
+                chars[at].to_string(),
+                s.style.add_modifier(Modifier::REVERSED),
+            ));
             out.push(Span::styled(chars[at + 1..].iter().collect::<String>(), s.style));
             placed = true;
         } else {
@@ -531,7 +621,9 @@ pub fn wrap(line: Line<'static>, width: usize) -> Vec<Line<'static>> {
                 out.push(Vec::new());
             }
             used += chars.len();
-            out.last_mut().unwrap().push(Span::styled(chars.into_iter().collect::<String>(), span.style));
+            out.last_mut()
+                .unwrap()
+                .push(Span::styled(chars.into_iter().collect::<String>(), span.style));
         }
     }
     out.into_iter().map(Line::from).collect()
@@ -557,7 +649,10 @@ mod tests {
         let spans = vec![Span::raw("ab"), Span::raw("cd")];
         let out = with_cursor(&spans, 2);
         assert_eq!(out.iter().map(|s| s.content.as_ref()).collect::<String>(), "abcd");
-        assert!(out.iter().any(|s| s.content == "c" && s.style.add_modifier.contains(Modifier::REVERSED)));
+        assert!(
+            out.iter()
+                .any(|s| s.content == "c" && s.style.add_modifier.contains(Modifier::REVERSED))
+        );
         assert_eq!(with_cursor(&spans, 9).last().unwrap().content, " ");
     }
 }

@@ -30,7 +30,14 @@ impl Picker {
     pub fn new(title: impl Into<String>, items: Vec<String>) -> Self {
         let matches = (0..items.len()).collect();
         let matcher = Matcher::new(Config::DEFAULT.match_paths());
-        Self { title: title.into(), items, query: String::new(), matches, state: ListState::default().with_selected(Some(0)), matcher }
+        Self {
+            title: title.into(),
+            items,
+            query: String::new(),
+            matches,
+            state: ListState::default().with_selected(Some(0)),
+            matcher,
+        }
     }
 
     fn refilter(&mut self) {
@@ -54,8 +61,12 @@ impl Picker {
         match k.code {
             KeyCode::Esc => return Picked::Cancel,
             KeyCode::Enter => return self.matches.get(sel).map_or(Picked::Cancel, |&i| Picked::Pick(i)),
-            KeyCode::Down | KeyCode::Tab => self.state.select(Some((sel + 1).min(self.matches.len().saturating_sub(1)))),
-            KeyCode::Char('n' | 'j') if ctrl => self.state.select(Some((sel + 1).min(self.matches.len().saturating_sub(1)))),
+            KeyCode::Down | KeyCode::Tab => self
+                .state
+                .select(Some((sel + 1).min(self.matches.len().saturating_sub(1)))),
+            KeyCode::Char('n' | 'j') if ctrl => self
+                .state
+                .select(Some((sel + 1).min(self.matches.len().saturating_sub(1)))),
             KeyCode::Up | KeyCode::BackTab => self.state.select(Some(sel.saturating_sub(1))),
             KeyCode::Char('p' | 'k') if ctrl => self.state.select(Some(sel.saturating_sub(1))),
             KeyCode::Char('u') if ctrl => {
@@ -83,10 +94,27 @@ impl Picker {
         let inner = block.inner(area);
         f.render_widget(block, area);
         let [input, list] = Layout::vertical([Constraint::Length(1), Constraint::Fill(1)]).areas(inner);
-        f.render_widget(Paragraph::new(Line::from(vec!["› ".cyan(), self.query.clone().into(), "█".dark_gray()])), input);
+        f.render_widget(
+            Paragraph::new(Line::from(vec![
+                "› ".cyan(),
+                self.query.clone().into(),
+                "█".dark_gray(),
+            ])),
+            input,
+        );
         // Only materialize what fits on screen.
-        let offset = self.state.selected().unwrap_or(0).saturating_sub((list.height as usize).saturating_sub(1));
-        let items: Vec<Line> = self.matches.iter().skip(offset).take(list.height as usize).map(|&i| Line::from(self.items[i].clone())).collect();
+        let offset = self
+            .state
+            .selected()
+            .unwrap_or(0)
+            .saturating_sub((list.height as usize).saturating_sub(1));
+        let items: Vec<Line> = self
+            .matches
+            .iter()
+            .skip(offset)
+            .take(list.height as usize)
+            .map(|&i| Line::from(self.items[i].clone()))
+            .collect();
         let mut state = ListState::default().with_selected(self.state.selected().map(|s| s - offset));
         f.render_stateful_widget(List::new(items).highlight_style(SELECTED), list, &mut state);
     }
