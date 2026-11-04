@@ -1,129 +1,177 @@
-# prt
+# revu
 
-Revue de pull requests GitHub dans le terminal : tableau de bord multi-repos,
-page de PR façon GitHub, diff avec commentaires inline, review en attente,
-statut « viewed » synchronisé, et navigation dans le code (fichiers, go to
-definition, références) sans quitter l'outil.
+Review GitHub pull requests without leaving the terminal.
 
-Toutes les données passent par le [CLI `gh`](https://cli.github.com/) : si
-`gh auth status` est bon, `prt` marche.
+`revu` is a keyboard-driven TUI for the review loop: see what needs you
+across all your repositories, read a PR like on its GitHub page, go through
+the diff file by file, leave comments in a pending review, and jump around
+the code (any file, go to definition, references) to check how a change fits.
+It is built for large PRs, including AI-generated ones and the bot reviews
+they come with.
 
-## Installation
+- **Dashboard across repos**: open PRs, review requests, assignments, your
+  PRs, drafts and failing CI for every configured repository, plus a
+  "for you" list. Not tied to the directory you run it from.
+- **PR page**: description, timeline (comments, reviews, threads), reviewers,
+  assignees, labels, mergeability and checks.
+- **Files changed**: syntax-highlighted diff with review threads inline,
+  per-file "viewed" state synced with GitHub (applied instantly, synced in the
+  background), lockfiles folded.
+- **Reviews like on GitHub**: comment a line or a range, reply, resolve,
+  then submit as comment / approve / request changes. Comments are written in
+  your `$EDITOR`.
+- **Code navigation**: fuzzy-open any file of the PR head, `gd` / `gr` / `K`
+  through a language server running on a detached worktree of the PR, jump
+  list.
+- **Issues**: per-repo list with GitHub search syntax.
+
+Everything goes through the [GitHub CLI](https://cli.github.com/): if
+`gh auth status` is fine, `revu` works, with whichever account `gh` is using
+(switch with `gh auth switch`).
+
+## Install
+
+With Nix:
 
 ```sh
-cargo install --path .
-prt
+nix run github:alexpill/revu
+# or keep it around
+nix profile install github:alexpill/revu
 ```
 
-Prérequis : `gh` authentifié, `git`, et les serveurs LSP voulus dans le `PATH`.
+The Nix package brings `gh` and `git` along if they are not already installed.
+
+With Cargo (needs `gh` and `git` in `PATH`):
+
+```sh
+cargo install --git https://github.com/alexpill/revu
+```
+
+Language servers are optional and looked up in `PATH` (see below).
 
 ## Configuration
 
-`$XDG_CONFIG_HOME/prt/config.toml` (par défaut `~/.config/prt/config.toml`) :
+`$XDG_CONFIG_HOME/revu/config.toml` (usually `~/.config/revu/config.toml`):
 
 ```toml
-theme = "Catppuccin Mocha"     # optionnel, n'importe quel thème bat
+theme = "Catppuccin Mocha"     # optional, any bat theme name
 
 [[repos]]
 name = "owner/repo"
-path = "~/code/repo"           # optionnel : clone local
+path = "~/code/repo"           # optional: local clone
 
 [[repos]]
-name = "owner/autre-repo"
+name = "owner/other-repo"
 
-[lsp]                          # optionnel : extension -> commande
+[lsp]                          # optional: file extension -> server command
 ts = ["typescript-language-server", "--stdio"]
 nix = ["nixd"]
 ```
 
-Sans `[[repos]]`, `prt` prend le repo GitHub du dossier courant.
+Without any `[[repos]]`, `revu` uses the GitHub repository of the current
+directory.
 
-Le `path` d'un repo active :
-- la lecture des fichiers en local (`git show`, pas de limite de taille de l'API) ;
-- le LSP : au premier `gd`, `prt` récupère `refs/pull/N/head` et crée un
-  worktree détaché dans `~/.cache/prt/worktrees/`. Ton checkout n'est jamais modifié.
+Giving a repo a local `path` enables:
 
-Serveurs par défaut : `rust-analyzer`, `typescript-language-server`,
-`pyright-langserver`, `gopls`, `nil`, `lua-language-server`, `clangd`, `zls`, `ruby-lsp`.
+- reading files from the clone (`git show`), with no API size limits;
+- language servers: on the first `gd`, `revu` fetches `refs/pull/N/head` and
+  creates a detached worktree under `~/.cache/revu/worktrees/`. Your own
+  checkout is never touched.
 
-## Utilisation
+Default language servers: `rust-analyzer`, `typescript-language-server`,
+`pyright-langserver`, `gopls`, `nil`, `lua-language-server`, `clangd`, `zls`,
+`ruby-lsp`.
 
-`?` affiche les raccourcis de l'écran courant.
+## Keys
 
-**Accueil / repos**
+Press `?` anywhere for the keys of the current screen.
 
-| Touche | Action |
+**Dashboard and repositories**
+
+| Key | Action |
 |---|---|
-| `1`-`9`, `H`/`L`, `Tab` | onglets (1 = accueil) |
-| `p` / `i` | PR / issues du repo |
-| `f` | filtre PR : toutes, review demandée, assignées, les miennes, drafts |
-| `/` | filtre les PR, ou recherche d'issues en syntaxe GitHub (`is:closed label:bug`) |
-| `Enter`, `o` | ouvrir, ouvrir dans le navigateur |
-| `Ctrl-r` | rafraîchir |
+| `1`-`9`, `H`/`L`, `Tab` | switch tab (1 = home) |
+| `p` / `i` | pull requests / issues of the repo |
+| `f` | PR filter: all, review requested, assigned, mine, drafts |
+| `/` | filter PRs, or search issues with GitHub syntax (`is:closed label:bug`) |
+| `Enter`, `o` | open, open in browser |
+| `Ctrl-r` | refresh |
 
-**PR**
+**Pull request**
 
-| Touche | Action |
+| Key | Action |
 |---|---|
-| `1` `2` `3`… `H`/`L` | conversation, fichiers, buffers ouverts |
-| `Tab` | fichiers : liste ↔ diff |
-| `[` `]` / `{` `}` | fichier / hunk précédent, suivant |
-| `Space` | marquer vu (immédiat, synchro GitHub en fond) et passer au suivant non vu |
-| `j/k h/l w/b 0/$ gg/G Ctrl-d/u` | déplacements |
-| `v` puis `c` | commenter une ligne ou une plage (dans la review en attente) |
-| `r` / `R` | sur un thread : répondre / résoudre |
-| `z` | déplier un fichier généré (lockfiles repliés par défaut) |
-| `gd` `gr` `K` | définition, références, hover (LSP) |
-| `Ctrl-p` | ouvrir n'importe quel fichier de la PR |
-| `/` `n` `N` | rechercher dans un buffer |
-| `Ctrl-o` | revenir en arrière |
-| `x` | fermer le buffer |
-| `e` | ouvrir l'endroit courant dans `$EDITOR` |
-| `S` | soumettre la review : commenter, approuver, demander des changements, abandonner |
-| `C` | commentaire général sur la PR |
+| `1` `2` `3`… `H`/`L` | conversation, files, open buffers |
+| `Tab` | files: switch between list and diff |
+| `[` `]` / `{` `}` | previous / next file, hunk |
+| `Space` | toggle viewed and move to the next unviewed file |
+| `j/k h/l w/b 0/$ gg/G Ctrl-d/u` | move |
+| `v`, then `c` | comment on a line or a range (pending review) |
+| `r` / `R` | on a thread: reply / resolve or unresolve |
+| `z` | unfold a generated file |
+| `gd` `gr` `K` | definition, references, hover |
+| `Ctrl-p` | open any file of the PR head |
+| `/` `n` `N` | search in a buffer |
+| `Ctrl-o` | jump back |
+| `x` | close buffer |
+| `e` | open the current position in `$EDITOR` |
+| `S` | submit review: comment, approve, request changes, or discard |
+| `C` | comment on the PR |
 
-Les commentaires s'écrivent dans `$VISUAL`/`$EDITOR` ; `:cq` annule.
+Comments open in `$VISUAL` / `$EDITOR`; quit with `:cq` (non-zero exit) to cancel.
 
-## Architecture
+## How it works
 
 ```
 src/
-├── main.rs          démarrage du terminal
-├── config.rs        config.toml, repo du dossier courant
-├── gh/              accès GitHub via `gh api`
-│   ├── mod.rs       requêtes GraphQL/REST (listes, PR, fichiers, issues)
-│   ├── model.rs     types des réponses
-│   └── mutation.rs  écritures, exécutées dans l'ordre sur un thread dédié
-├── source.rs        contenu des fichiers : clone local ou API, worktrees
-├── diff.rs          patch → lignes numérotées (ancres LEFT/RIGHT)
-├── highlight.rs     coloration (syntect + syntaxes et thèmes de bat)
-├── markdown.rs      rendu Markdown minimal, nettoie le HTML des bots
-├── lsp.rs           client LSP minimal (JSON-RPC sur stdio)
+├── main.rs          terminal setup
+├── config.rs        config.toml, current-directory fallback
+├── gh/              GitHub through `gh api`
+│   ├── mod.rs       GraphQL/REST queries (lists, PRs, files, issues)
+│   ├── model.rs     response types
+│   └── mutation.rs  writes, run in order on a dedicated thread
+├── source.rs        file contents: local clone or API; worktrees
+├── diff.rs          patches to numbered lines (LEFT/RIGHT anchors)
+├── highlight.rs     syntax highlighting (syntect + bat's syntaxes and themes)
+├── markdown.rs      small Markdown renderer that strips bot HTML
+├── lsp.rs           minimal LSP client (JSON-RPC over stdio)
 └── app/
-    ├── mod.rs       boucle d'événements, pile d'écrans, jobs en arrière-plan
-    ├── main_screen.rs  accueil + onglets repo
-    ├── issue.rs     page d'une issue
-    ├── picker.rs    sélecteur flou (fichiers, résultats LSP)
-    ├── ui.rs        helpers de rendu partagés
-    └── pr/          page d'une PR
+    ├── mod.rs       event loop, screen stack, background jobs
+    ├── main_screen.rs  dashboard and repository tabs
+    ├── issue.rs     issue page
+    ├── picker.rs    fuzzy picker (files, LSP results)
+    ├── ui.rs        shared rendering helpers
+    └── pr/          pull request page
         ├── conversation.rs  description, timeline, sidebar
-        ├── files.rs         liste de fichiers + diff + threads
-        └── code.rs          buffers de code en lecture seule
+        ├── files.rs         file list, diff and threads
+        └── code.rs          read-only code buffers
 ```
 
-Tout ce qui fait des I/O (`gh`, `git`, LSP) tourne sur des threads qui
-répondent par un unique canal de `Msg` : l'interface ne bloque jamais. Les
-écritures (vu, commentaires, review) sont appliquées tout de suite en local
-puis envoyées dans l'ordre par un worker unique.
+Anything doing I/O (`gh`, `git`, language servers) runs on a background
+thread and reports back through one message channel, so the UI never blocks.
+Writes (viewed state, comments, reviews) are applied locally first and sent
+in order by a single worker.
 
-Pour ajouter un écran : une variante de `Screen` dans `app/mod.rs`, avec
-`on_key`, `on_msg`, `render` et `HELP`.
+A new screen is a `Screen` variant in `app/mod.rs` with `on_key`, `on_msg`,
+`render` and `HELP`.
 
-## Limites connues
+## Development
 
-- 30 PR ouvertes max par repo (les plus récemment mises à jour).
-- « Review demandée » ne tient pas compte des demandes faites à une équipe.
-- Diff unifié seulement ; pas de défilement horizontal des lignes longues.
-- Fichiers sans patch dans l'API (binaires, très gros) : pas de diff affiché.
-- Pas encore d'actions IA ni de plugins : les points d'extension naturels sont
-  `External` (commande externe avec le terminal) et `Outcome` (actions des onglets).
+```sh
+nix develop      # or any Rust toolchain >= 1.88
+cargo test
+cargo clippy
+```
+
+What is planned and the known limitations are tracked in
+[ROADMAP.md](ROADMAP.md).
+
+## License
+
+Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or
+[MIT license](LICENSE-MIT), at your option.
+
+Unless you explicitly state otherwise, any contribution intentionally
+submitted for inclusion in this project by you, as defined in the Apache-2.0
+license, shall be dual licensed as above, without any additional terms or
+conditions.
