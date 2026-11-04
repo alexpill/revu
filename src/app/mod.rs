@@ -34,6 +34,7 @@ pub enum Msg {
     Issues(usize, Result<Vec<IssueSummary>>),
     Issue(Key, Result<IssueDetail>),
     Pr(Key, Result<PrDetail>),
+    Files(Key, Result<(Vec<ChangedFile>, std::collections::HashMap<String, bool>)>),
     Fetched(Key, Result<()>),
     Mutated(Key, Mutation, Result<()>),
 }
@@ -176,12 +177,18 @@ impl App {
                 terminal.draw(|f| self.render(f))?;
                 dirty = false;
             }
-            if event::poll(Duration::from_millis(50))? {
+            // Handle every queued key before redrawing, so held keys don't lag.
+            let mut timeout = Duration::from_millis(50);
+            while event::poll(timeout)? {
                 match event::read()? {
                     Event::Key(k) if k.kind == KeyEventKind::Press => self.on_key(k),
                     _ => {}
                 }
                 dirty = true;
+                timeout = Duration::ZERO;
+                if self.ctx.external.is_some() || self.quit {
+                    break;
+                }
             }
             while let Ok(msg) = self.rx.try_recv() {
                 self.on_msg(msg);
@@ -251,13 +258,14 @@ impl App {
         match ext {
             External::Compose { key, pr_id, mutation } => {
                 let file = config::cache_dir().join("COMMENT.md");
+                let allow_empty = matches!(mutation, Mutation::Submit { .. });
                 match compose(&file) {
-                    Ok(Some(body)) => {
+                    Ok(body) if body.is_empty() && !allow_empty => self.ctx.info("empty comment, cancelled"),
+                    Ok(body) => {
                         self.ctx.mutate(key, &pr_id, mutation.with_body(body));
                         self.ctx.info("sending…");
                     }
-                    Ok(None) => self.ctx.info("empty comment, cancelled"),
-                    Err(e) => self.ctx.error(e),
+                    Err(e) => self.ctx.info(format!("cancelled ({e})")),
                 }
             }
         }
@@ -290,9 +298,9 @@ impl App {
         if self.help {
             let lines: Vec<Line> = help
                 .iter()
-                .map(|(k, d)| Line::from(vec![Span::from(format!("{k:>12}  ")).cyan(), Span::from(*d)]))
+                .map(|(k, d)| Line::from(vec![Span::from(format!("{k:>16}  ")).cyan(), Span::from(*d)]))
                 .collect();
-            let area = ui::centered(f.area(), 64, lines.len() as u16 + 2);
+            let area = ui::centered(f.area(), 76, lines.len() as u16 + 2);
             f.render_widget(Clear, area);
             f.render_widget(Paragraph::new(lines).block(ui::block("keys", true)), area);
         }
@@ -316,11 +324,10 @@ pub fn editor(args: &[&str]) -> Command {
     cmd
 }
 
-/// Lets the user write a comment; `None` when left empty.
-fn compose(file: &PathBuf) -> Result<Option<String>> {
+/// Lets the user write a comment; errors when the editor exits non-zero (`:cq`).
+fn compose(file: &PathBuf) -> Result<String> {
     std::fs::create_dir_all(file.parent().unwrap())?;
     std::fs::write(file, "")?;
     with_terminal_released(&mut editor(&[&file.to_string_lossy()]))?;
-    let body = std::fs::read_to_string(file)?.trim().to_string();
-    Ok((!body.is_empty()).then_some(body))
+    Ok(std::fs::read_to_string(file)?.trim().to_string())
 }

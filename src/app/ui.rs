@@ -11,7 +11,9 @@ pub const DIM: Style = Style::new().fg(Color::DarkGray);
 pub const SELECTED: Style = Style::new().bg(Color::Rgb(45, 50, 65));
 
 pub fn block(title: impl Into<String>, focused: bool) -> Block<'static> {
-    let b = Block::bordered().border_type(BorderType::Rounded).title(format!(" {} ", title.into()));
+    let title = title.into();
+    let b = Block::bordered().border_type(BorderType::Rounded);
+    let b = if title.is_empty() { b } else { b.title(format!(" {title} ")) };
     if focused { b.border_style(Style::new().fg(ACCENT)) } else { b.border_style(DIM) }
 }
 
