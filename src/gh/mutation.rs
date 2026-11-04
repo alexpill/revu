@@ -36,6 +36,10 @@ pub enum Mutation {
         body: String,
     },
     DiscardReview,
+    /// A review comment, pending or published.
+    DeleteComment {
+        comment_id: String,
+    },
     Comment {
         body: String,
     },
@@ -145,6 +149,12 @@ fn run(pr: &str, m: &Mutation) -> Result<()> {
             graphql(
                 "mutation($id: ID!) { deletePullRequestReview(input: {pullRequestReviewId: $id}) { clientMutationId } }",
                 json!({ "id": review }),
+            )?;
+        }
+        Mutation::DeleteComment { comment_id } => {
+            graphql(
+                "mutation($id: ID!) { deletePullRequestReviewComment(input: {id: $id}) { clientMutationId } }",
+                json!({ "id": comment_id }),
             )?;
         }
         Mutation::Comment { body } => {

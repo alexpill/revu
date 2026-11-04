@@ -175,11 +175,13 @@ pub struct Review {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ThreadComment {
+    pub id: String,
     pub author: Option<Actor>,
     pub body: String,
     pub created_at: String,
     /// PENDING while part of an unsubmitted review.
     pub state: String,
+    pub viewer_can_delete: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]

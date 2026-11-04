@@ -134,6 +134,7 @@ Press `?` anywhere for the keys of the current screen.
 | `j/k h/l w/b 0/$ gg/G Ctrl-d/u` | move |
 | `v`, then `c` | comment on a line or a range (pending review) |
 | `r` / `R` | on a thread: reply / resolve or unresolve |
+| `D` | on a comment: delete it (a pending one, or one of yours), after confirming with `y` |
 | `z` | unfold a generated file |
 | `gd` `gr` `K` | definition, references, hover |
 | `Ctrl-p` | open any file of the PR head |

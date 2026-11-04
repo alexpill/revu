@@ -80,7 +80,7 @@ fn timeline(d: &PrDetail, hl: &Highlighter) -> Vec<Line<'static>> {
     }
     for t in &d.review_threads.nodes {
         if let Some(first) = t.comments.nodes.first() {
-            items.push((&first.created_at, thread(t, hl)));
+            items.push((&first.created_at, thread(t, hl).into_iter().map(|(_, l)| l).collect()));
         }
     }
     items.sort_by(|a, b| a.0.cmp(b.0));
@@ -97,8 +97,9 @@ pub fn review_state(s: &str) -> Span<'static> {
     }
 }
 
-/// A review thread; resolved ones are folded to their header.
-pub fn thread(t: &Thread, hl: &Highlighter) -> Vec<Line<'static>> {
+/// A review thread, each line tagged with the index of the comment it shows
+/// (`None` for the header). Resolved threads are folded to their header.
+pub fn thread(t: &Thread, hl: &Highlighter) -> Vec<(Option<usize>, Line<'static>)> {
     let line = t.line.or(t.original_line).map_or(String::new(), |l| format!(":{l}"));
     let mut header = vec!["💬 ".into(), format!("{}{line}", t.path).cyan()];
     if t.is_resolved {
@@ -107,18 +108,19 @@ pub fn thread(t: &Thread, hl: &Highlighter) -> Vec<Line<'static>> {
     if t.is_outdated {
         header.push(" outdated".dark_gray());
     }
-    let mut lines = vec![Line::from(header)];
+    let mut lines = vec![(None, Line::from(header))];
     if !t.is_resolved {
-        for c in &t.comments.nodes {
+        for (i, c) in t.comments.nodes.iter().enumerate() {
             let badge = if c.state == "PENDING" {
                 "pending".yellow()
             } else {
                 "".into()
             };
-            lines.extend(ui::comment(&c.author, &c.created_at, badge, &c.body, hl));
+            let comment = ui::comment(&c.author, &c.created_at, badge, &c.body, hl);
+            lines.extend(comment.into_iter().map(|l| (Some(i), l)));
         }
     } else {
-        lines.push(Line::default());
+        lines.push((None, Line::default()));
     }
     lines
 }

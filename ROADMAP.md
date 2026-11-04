@@ -5,10 +5,11 @@ the current version are listed at the end.
 
 ## Next
 
-- [ ] **Check review writes against a real PR.** Line/range comments, replies,
-      resolve/unresolve, submit (comment/approve/request changes), discard and
-      PR comments are implemented against the GitHub GraphQL API but have not
-      been exercised end to end yet. The viewed toggle has been.
+- [ ] **Check the remaining review writes against a real PR.** Replies,
+      resolve/unresolve, range comments, submit (comment/approve/request
+      changes), discard and PR comments are implemented against the GitHub
+      GraphQL API but not exercised end to end yet. Viewed toggles, adding a
+      line comment to the pending review and deleting it have been.
 - [ ] **CI for this repo**: `cargo test`, `cargo clippy`, `nix build` on push.
 - [ ] **Binary cache** (Cachix, pushed from CI and declared in the flake's
       `nixConfig`) so `nix run` downloads the binary instead of a Rust
@@ -30,7 +31,8 @@ the current version are listed at the end.
 - [ ] Directory tree in the file list, with folding.
 - [ ] Diff for files GitHub returns no patch for (binaries aside): compute it
       from the local clone.
-- [ ] Edit and delete your own comments; suggestion blocks; reactions.
+- [ ] Edit your own comments; suggestion blocks; reactions.
+- [ ] Delete PR-level (issue) comments; review comments can be deleted already.
 - [ ] Filter threads by author (e.g. hide or show only bot reviews), jump
       between unresolved threads.
 - [ ] Show the pending comment right away instead of after the reload.

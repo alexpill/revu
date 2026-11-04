@@ -76,8 +76,9 @@ pub fn entries(files: Vec<ChangedFile>, viewed: &HashMap<String, bool>) -> Vec<F
 
 pub enum Row {
     Line(usize),
-    /// A rendered line of review thread `.0` (index in `review_threads`).
-    Thread(usize, Line<'static>),
+    /// A rendered line of review thread `.0` (index in `review_threads`),
+    /// showing its comment `.1` (`None` on the header).
+    Thread(usize, Option<usize>, Line<'static>),
     Note(Line<'static>),
 }
 
@@ -91,6 +92,8 @@ pub struct FilesView {
     /// Start row of a visual (range) selection.
     anchor: Option<usize>,
     pending_g: bool,
+    /// Comment awaiting `y` to be deleted.
+    confirm_delete: Option<String>,
     /// Rows as last rendered, so keys act on what is on screen.
     rows: Vec<Row>,
     height: usize,
@@ -108,6 +111,7 @@ impl FilesView {
             scroll: 0,
             anchor: None,
             pending_g: false,
+            confirm_delete: None,
             rows: Vec::new(),
             height: 20,
             list: ListState::default(),
@@ -158,7 +162,7 @@ impl FilesView {
 
     fn current_thread(&self) -> Option<usize> {
         match self.rows.get(self.cursor)? {
-            Row::Thread(t, _) => Some(*t),
+            Row::Thread(t, ..) => Some(*t),
             _ => None,
         }
     }
@@ -197,6 +201,13 @@ impl FilesView {
 
     pub fn on_key(&mut self, k: KeyEvent, ctx: &mut Ctx, key: Key, detail: Option<&PrDetail>) -> Outcome {
         let ctrl = k.modifiers.contains(KeyModifiers::CONTROL);
+        if let Some(comment_id) = self.confirm_delete.take() {
+            match (k.code, detail) {
+                (KeyCode::Char('y'), Some(d)) => ctx.mutate(key, &d.id, Mutation::DeleteComment { comment_id }),
+                _ => ctx.info("kept"),
+            }
+            return Outcome::Handled;
+        }
         if std::mem::take(&mut self.pending_g) {
             return match k.code {
                 KeyCode::Char('g') => {
@@ -268,6 +279,7 @@ impl FilesView {
                     );
                 }
             }
+            KeyCode::Char('D') => self.ask_delete(ctx, detail),
             KeyCode::Char('R') => {
                 if let (Some(t), Some(d)) = (self.current_thread(), detail) {
                     let t = &d.review_threads.nodes[t];
@@ -284,6 +296,24 @@ impl FilesView {
             _ => return Outcome::Unhandled,
         }
         Outcome::Handled
+    }
+
+    /// Asks to confirm deleting the comment under the cursor.
+    fn ask_delete(&mut self, ctx: &mut Ctx, detail: Option<&PrDetail>) {
+        let (Some(Row::Thread(t, Some(c), _)), Some(d)) = (self.rows.get(self.cursor), detail) else {
+            return ctx.info("put the cursor on a comment to delete it");
+        };
+        let comment = &d.review_threads.nodes[*t].comments.nodes[*c];
+        if !comment.viewer_can_delete {
+            return ctx.error("you can only delete your own comments");
+        }
+        let what = if comment.state == "PENDING" {
+            "pending comment"
+        } else {
+            "published comment"
+        };
+        ctx.info(format!("delete this {what}? y to confirm, any other key keeps it"));
+        self.confirm_delete = Some(comment.id.clone());
     }
 
     /// Marks viewed locally right away (GitHub sync is queued) and moves on to
@@ -412,9 +442,9 @@ impl FilesView {
             .filter(|(_, t)| t.path == file.path)
             .collect();
         let thread_rows = |t: usize, th: &crate::gh::model::Thread, rows: &mut Vec<Row>| {
-            for line in conversation::thread(th, hl) {
+            for (c, line) in conversation::thread(th, hl) {
                 for l in wrap(line, width.saturating_sub(GUTTER + 2)) {
-                    rows.push(Row::Thread(t, l));
+                    rows.push(Row::Thread(t, c, l));
                 }
             }
         };
@@ -493,7 +523,7 @@ impl FilesView {
                 let is_cursor = self.focus_diff && r == self.cursor;
                 let mut line = match row {
                     Row::Line(i) => diff_line(&file.lines[*i], &styled[*i], is_cursor.then_some(self.col)),
-                    Row::Thread(_, l) => {
+                    Row::Thread(_, _, l) => {
                         let mut spans = vec![Span::raw(" ".repeat(GUTTER)), "│ ".fg(ui::ACCENT)];
                         spans.extend(l.spans.iter().cloned());
                         Line::from(spans).bg(THREAD_BG)

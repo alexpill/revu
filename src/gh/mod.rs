@@ -134,7 +134,7 @@ pub fn pr(owner: &str, name: &str, number: u64) -> Result<PrDetail> {
         comments(first: 100) { nodes { author { login } body createdAt } }
         reviews(first: 100) { nodes { author { login } state body submittedAt } }
         reviewThreads(first: 100) { nodes { id isResolved isOutdated path line originalLine diffSide
-          comments(first: 50) { nodes { author { login } body createdAt state } } } }
+          comments(first: 50) { nodes { id author { login } body createdAt state viewerCanDelete } } } }
       } } }"#;
     let mut data = graphql(Q, json!({ "owner": owner, "name": name, "number": number }))?;
     decode(data["repository"]["pullRequest"].take())
