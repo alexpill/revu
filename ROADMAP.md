@@ -84,6 +84,13 @@ Make buffers and the diff feel like Neovim, still without editing:
 
 ## Dashboard and issues
 
+- [ ] **Review progress in the PR lists** (home and repo tabs): files viewed
+      out of the total (e.g. `12/40`, or a small bar), so you can tell at a
+      glance what is left to review, plus your pending comments if any. The
+      list query would need each PR's files and `viewerViewedState`, which
+      makes an already slow GitHub query heavier: probably fetch it lazily
+      (visible rows only, or a second request after the list shows).
+
 - [ ] More than 30 open PRs per repo (pagination / load more).
 - [ ] Review requests made to a team you belong to.
 - [ ] Auto-refresh and notifications.
