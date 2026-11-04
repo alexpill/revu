@@ -35,7 +35,14 @@ the current version are listed at the end.
 - [ ] Delete PR-level (issue) comments; review comments can be deleted already.
 - [ ] Filter threads by author (e.g. hide or show only bot reviews), jump
       between unresolved threads.
-- [ ] Show the pending comment right away instead of after the reload.
+- [ ] **Optimistic comments, like the viewed toggle.** Adding, replying to,
+      deleting and resolving comments should update the screen at once
+      (a new comment shows as "sending", a deleted one disappears) while the
+      GitHub write runs in the background, instead of waiting for the PR to
+      reload. Show the sync state: a spinner or counter of writes in flight,
+      per-comment status (sending / failed), and on failure restore the
+      previous state with the error and a way to retry. Today these writes
+      wait for GitHub, then re-fetch the whole PR.
 
 ## Pull request actions
 
