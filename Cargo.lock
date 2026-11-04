@@ -1029,20 +1029,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4a6394b9e965e73d0a289ee54f589087e2c676aedf60885baf52c76b771e4958"
 
 [[package]]
-name = "pr-tool"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "nucleo-matcher",
- "ratatui",
- "serde",
- "serde_json",
- "syntect",
- "toml",
- "two-face",
-]
-
-[[package]]
 name = "proc-macro2"
 version = "1.0.107"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1235,6 +1221,20 @@ name = "regex-syntax"
 version = "0.8.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
+
+[[package]]
+name = "revu"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "nucleo-matcher",
+ "ratatui",
+ "serde",
+ "serde_json",
+ "syntect",
+ "toml",
+ "two-face",
+]
 
 [[package]]
 name = "rustc_version"

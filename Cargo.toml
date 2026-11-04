@@ -1,12 +1,14 @@
 [package]
-name = "pr-tool"
+name = "revu"
 version = "0.1.0"
 edition = "2024"
-description = "Terminal UI to triage and review GitHub pull requests"
-
-[[bin]]
-name = "prt"
-path = "src/main.rs"
+description = "Terminal UI to triage and review GitHub pull requests, with inline comments and language-server navigation"
+authors = ["Alexandre Pilleyre"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/alexpill/revu"
+readme = "README.md"
+keywords = ["github", "code-review", "pull-request", "tui", "ratatui"]
+categories = ["command-line-utilities", "development-tools"]
 
 [dependencies]
 anyhow = "1"

@@ -1,4 +1,4 @@
-//! User configuration, read from `$XDG_CONFIG_HOME/prt/config.toml`.
+//! User configuration, read from `$XDG_CONFIG_HOME/revu/config.toml`.
 //!
 //! ```toml
 //! [[repos]]
@@ -43,14 +43,14 @@ pub fn config_path() -> PathBuf {
     let base = std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|| home().join(".config"));
-    base.join("prt").join("config.toml")
+    base.join("revu").join("config.toml")
 }
 
 pub fn cache_dir() -> PathBuf {
     let base = std::env::var_os("XDG_CACHE_HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|| home().join(".cache"));
-    base.join("prt")
+    base.join("revu")
 }
 
 fn home() -> PathBuf {
