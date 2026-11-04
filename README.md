@@ -39,15 +39,17 @@ nix run github:alexpill/revu
 nix profile install github:alexpill/revu
 ```
 
-The Nix package brings `gh` and `git` along if they are not already installed.
-
-With Cargo (needs `gh` and `git` in `PATH`):
+With Cargo:
 
 ```sh
 cargo install --git https://github.com/alexpill/revu
 ```
 
-Language servers are optional and looked up in `PATH` (see below).
+Either way, `revu` needs `gh` (logged in with `gh auth login`) and `git` in
+`PATH`. Language servers are optional and looked up in `PATH` too (see below).
+
+The first `nix run` on a machine builds `revu` from source, which downloads a
+Rust toolchain; a binary cache is on the [roadmap](ROADMAP.md).
 
 ## Configuration
 

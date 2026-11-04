@@ -10,6 +10,9 @@ the current version are listed at the end.
       PR comments are implemented against the GitHub GraphQL API but have not
       been exercised end to end yet. The viewed toggle has been.
 - [ ] **CI for this repo**: `cargo test`, `cargo clippy`, `nix build` on push.
+- [ ] **Binary cache** (Cachix, pushed from CI and declared in the flake's
+      `nixConfig`) so `nix run` downloads the binary instead of a Rust
+      toolchain and a build.
 - [ ] **Screenshots / demo GIF** in the README.
 - [ ] **AI actions**: send the current hunk, file or whole PR to an AI CLI
       (e.g. `claude -p`) to explain it or pre-review it, and show the answer in

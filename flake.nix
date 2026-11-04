@@ -19,12 +19,9 @@
             root = ./.;
             fileset = pkgs.lib.fileset.unions [ ./Cargo.toml ./Cargo.lock ./src ];
           };
+          # gh and git are expected on PATH: bundling them added ~400 MiB for tools
+          # every user already has (and gh needs a login anyway).
           cargoLock.lockFile = ./Cargo.lock;
-          nativeBuildInputs = [ pkgs.makeWrapper ];
-          # gh and git are needed at runtime; appended so the user's own gh still wins.
-          postInstall = ''
-            wrapProgram $out/bin/revu --suffix PATH : ${pkgs.lib.makeBinPath [ pkgs.gh pkgs.git ]}
-          '';
           meta = {
             description = "Terminal UI to triage and review GitHub pull requests";
             homepage = "https://github.com/alexpill/revu";
