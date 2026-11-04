@@ -5,6 +5,7 @@
 
 mod issue;
 mod main_screen;
+mod pr;
 pub mod ui;
 
 use crate::config::{self, Config};
@@ -32,6 +33,8 @@ pub enum Msg {
     RepoPrs(usize, Result<RepoPrs>),
     Issues(usize, Result<Vec<IssueSummary>>),
     Issue(Key, Result<IssueDetail>),
+    Pr(Key, Result<PrDetail>),
+    Fetched(Key, Result<()>),
     Mutated(Key, Mutation, Result<()>),
 }
 
@@ -51,27 +54,32 @@ pub enum Action {
 
 pub enum Screen {
     Issue(issue::IssueScreen),
+    Pr(Box<pr::PrScreen>),
 }
 
 impl Screen {
     fn on_key(&mut self, k: KeyEvent, ctx: &mut Ctx) -> Action {
         match self {
             Screen::Issue(s) => s.on_key(k, ctx),
+            Screen::Pr(s) => s.on_key(k, ctx),
         }
     }
     fn on_msg(&mut self, msg: Msg, ctx: &mut Ctx) -> Option<Msg> {
         match self {
             Screen::Issue(s) => s.on_msg(msg, ctx),
+            Screen::Pr(s) => s.on_msg(msg, ctx),
         }
     }
     fn render(&mut self, f: &mut Frame, area: ratatui::layout::Rect, ctx: &Ctx) {
         match self {
             Screen::Issue(s) => s.render(f, area, ctx),
+            Screen::Pr(s) => s.render(f, area, ctx),
         }
     }
     fn help(&self) -> &'static [(&'static str, &'static str)] {
         match self {
             Screen::Issue(_) => issue::HELP,
+            Screen::Pr(_) => pr::HELP,
         }
     }
 }

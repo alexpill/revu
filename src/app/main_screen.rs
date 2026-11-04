@@ -1,6 +1,7 @@
 //! Home dashboard and one tab per configured repo (PRs / issues).
 
 use super::issue::IssueScreen;
+use super::pr::PrScreen;
 use super::ui::{self, DIM, SELECTED};
 use super::{Action, Ctx, Msg, Screen};
 use crate::gh::{self, model::*};
@@ -305,7 +306,7 @@ impl MainScreen {
             }
             KeyCode::Enter => match self.selected(&me) {
                 Some((false, key)) => return Action::Push(Screen::Issue(IssueScreen::open(key, ctx))),
-                Some((true, _key)) => ctx.info("PR view not implemented yet"),
+                Some((true, key)) => return Action::Push(Screen::Pr(Box::new(PrScreen::open(key, ctx)))),
                 None => {}
             },
             _ => {}

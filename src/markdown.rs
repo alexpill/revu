@@ -1,5 +1,7 @@
 //! Just enough Markdown for PR descriptions and comments: headings, lists,
-//! quotes, task boxes, fenced code (highlighted), inline `code` and **bold**.
+//! quotes, task boxes, fenced code (highlighted), inline `code`, **bold** and
+//! links. HTML tags (bots love `<picture>`/`<details>`) are dropped, keeping
+//! image alt text.
 
 use crate::highlight::Highlighter;
 use ratatui::style::{Color, Modifier, Style};
@@ -26,7 +28,14 @@ pub fn render(src: &str, hl: &Highlighter) -> Vec<Line<'static>> {
             code.push(raw);
             continue;
         }
-        out.push(block_line(raw));
+        for part in strip_tags(raw).split('\n') {
+            let blank = part.trim().is_empty();
+            // Collapse runs of blank lines (often left behind by stripped HTML).
+            if blank && out.last().is_none_or(|l: &Line| l.width() == 0) {
+                continue;
+            }
+            out.push(if blank { Line::default() } else { block_line(part) });
+        }
     }
     // Unterminated fence: show it raw rather than dropping it.
     if let Some((_, code)) = fence {
@@ -58,26 +67,78 @@ fn block_line(raw: &str) -> Line<'static> {
     Line::from(spans)
 }
 
-/// `code` and **bold** spans.
+/// `code`, **bold** and [links](url) / ![images](url).
 fn inline(s: &str) -> Vec<Span<'static>> {
     let mut spans = Vec::new();
     let mut rest = s;
-    while !rest.is_empty() {
-        let next = [rest.find('`'), rest.find("**")].into_iter().flatten().min();
+    loop {
+        let next = [rest.find('`'), rest.find("**"), rest.find('[')].into_iter().flatten().min();
         let Some(i) = next else { break };
-        let (marker, style) = if rest[i..].starts_with('`') {
-            ("`", Style::new().fg(Color::LightRed))
+        let (before, text, style, consumed) = if rest[i..].starts_with('[') {
+            // [text](url) keeps the text, ![alt](url) becomes ⟨alt⟩.
+            let Some((label, after)) = rest[i + 1..].split_once("](") else { break };
+            let Some(end) = after.find(')') else { break };
+            let consumed = i + 1 + label.len() + 2 + end + 1;
+            match rest[..i].strip_suffix('!') {
+                Some(before) => (before, format!("⟨{label}⟩"), Style::new(), consumed),
+                None => (&rest[..i], label.to_string(), Style::new().add_modifier(Modifier::UNDERLINED), consumed),
+            }
         } else {
-            ("**", Style::new().add_modifier(Modifier::BOLD))
+            let (marker, style) = if rest[i..].starts_with('`') {
+                ("`", Style::new().fg(Color::LightRed))
+            } else {
+                ("**", Style::new().add_modifier(Modifier::BOLD))
+            };
+            let after = &rest[i + marker.len()..];
+            let Some(end) = after.find(marker) else { break };
+            (&rest[..i], after[..end].to_string(), style, i + marker.len() + end + marker.len())
         };
-        let after = &rest[i + marker.len()..];
-        let Some(end) = after.find(marker) else { break };
-        spans.push(Span::raw(rest[..i].to_string()));
-        spans.push(Span::styled(after[..end].to_string(), style));
-        rest = &after[end + marker.len()..];
+        spans.push(Span::raw(before.to_string()));
+        spans.push(Span::styled(text, style));
+        rest = &rest[consumed..];
     }
     spans.push(Span::raw(rest.to_string()));
     spans
+}
+
+const HTML_TAGS: &[&str] = &[
+    "a", "b", "blockquote", "br", "code", "dd", "details", "div", "dl", "dt", "em", "h1", "h2", "h3", "h4", "h5",
+    "h6", "hr", "i", "img", "kbd", "li", "ol", "p", "picture", "pre", "source", "span", "strong", "sub", "summary",
+    "sup", "table", "tbody", "td", "th", "thead", "tr", "ul",
+];
+
+/// Drops known HTML tags outside `code` spans; `<img alt>` becomes ⟨alt⟩, `<br>` a newline.
+fn strip_tags(line: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut in_code = false;
+    let mut rest = line;
+    while let Some(c) = rest.chars().next() {
+        if c == '`' {
+            in_code = !in_code;
+        }
+        if c == '<' && !in_code {
+            if let Some(end) = rest.find('>') {
+                let tag = &rest[1..end];
+                let name = tag.trim_start_matches('/').split(|c: char| c.is_whitespace() || c == '/').next().unwrap_or("");
+                if HTML_TAGS.contains(&name.to_ascii_lowercase().as_str()) {
+                    match name {
+                        "br" => out.push('\n'),
+                        "img" => {
+                            if let Some(alt) = tag.split("alt=\"").nth(1).and_then(|a| a.split('"').next()) {
+                                out += &format!("⟨{alt}⟩");
+                            }
+                        }
+                        _ => {}
+                    }
+                    rest = &rest[end + 1..];
+                    continue;
+                }
+            }
+        }
+        out.push(c);
+        rest = &rest[c.len_utf8()..];
+    }
+    out
 }
 
 fn strip_html_comments(s: &str) -> String {
@@ -104,8 +165,13 @@ mod tests {
     #[test]
     fn renders_blocks() {
         let hl = Highlighter::new(None);
-        let lines = render("## Title\n<!-- hidden -->\n- [x] done `x` **b**\n```rust\nfn a() {}\n```", &hl);
+        let lines = render("## Title\n<!-- hidden -->\n\n- [x] done `x` **b**\n```rust\nfn a() {}\n```", &hl);
         let t: Vec<_> = lines.iter().map(text).collect();
         assert_eq!(t, vec!["Title", "", "☑ done x b", "  fn a() {}"]);
+        let t: Vec<_> = render("<picture><img alt=\"High\" src=x></picture> see [docs](http://x) `Vec<T>`<br>![logo](y)", &hl)
+            .iter()
+            .map(text)
+            .collect();
+        assert_eq!(t, vec!["⟨High⟩ see docs Vec<T>", "⟨logo⟩"]);
     }
 }
