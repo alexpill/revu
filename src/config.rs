@@ -98,7 +98,7 @@ fn cwd_repo() -> Option<RepoConfig> {
     Some(RepoConfig { name, path: Some(path) })
 }
 
-fn parse_github_remote(url: &str) -> Option<String> {
+pub fn parse_github_remote(url: &str) -> Option<String> {
     let rest = url
         .strip_prefix("git@github.com:")
         .or_else(|| url.strip_prefix("https://github.com/"))
