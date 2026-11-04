@@ -44,7 +44,6 @@ the current version are listed at the end.
 
 ## Code navigation
 
-- [ ] Language server progress (`$/progress`) in the status bar while indexing.
 - [ ] Diagnostics from the language server on changed lines.
 - [ ] Clean shutdown of language servers; command to remove old worktrees
       (`~/.cache/revu/worktrees` is never cleaned today).

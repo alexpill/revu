@@ -20,6 +20,7 @@ use ratatui::text::Line;
 use ratatui::widgets::{Clear, Paragraph, Tabs, Wrap};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 pub const HELP: &[(&str, &str)] = &[
     ("1-9 H/L", "tabs: conversation, files, open buffers"),
@@ -84,11 +85,22 @@ enum AskKind {
 }
 
 /// A language-server question about a position of the PR head.
+#[derive(Clone)]
 struct Ask {
     kind: AskKind,
     path: String,
     line: u32,
     col: usize,
+}
+
+/// How long after start an empty answer is blamed on loading (and retried).
+const WARMUP: Duration = Duration::from_secs(300);
+
+fn is_empty_answer(kind: AskKind, v: &serde_json::Value) -> bool {
+    match kind {
+        AskKind::Hover => lsp::hover_text(v).is_none(),
+        _ => lsp::locations(v).is_empty(),
+    }
 }
 
 const FILES_TAB: usize = 1;
@@ -111,7 +123,11 @@ pub struct PrScreen {
     /// Waiting for the worktree.
     pending_ask: Option<Ask>,
     servers: HashMap<Vec<String>, lsp::Server>,
-    lsp_requests: HashMap<i64, AskKind>,
+    lsp_requests: HashMap<i64, Ask>,
+    /// Servers (by id) that haven't finished their first load, with start time.
+    warming: HashMap<i64, Instant>,
+    /// Asked while the server was still loading: re-sent once it is ready.
+    retry: Option<Ask>,
     hover: Option<String>,
 }
 
@@ -132,6 +148,8 @@ impl PrScreen {
             pending_ask: None,
             servers: HashMap::new(),
             lsp_requests: HashMap::new(),
+            warming: HashMap::new(),
+            retry: None,
             hover: None,
         };
         s.load(ctx);
@@ -264,27 +282,73 @@ impl PrScreen {
             .ok_or_else(|| anyhow!("no language server known for {} (add one under [lsp])", ask.path))?;
         if !self.servers.contains_key(&cmd) {
             let tx = ctx.sender();
-            let server = lsp::Server::start(&cmd, root, move |id, r| {
-                let _ = tx.send(Msg::Lsp(id, r));
+            let server = lsp::Server::start(&cmd, root, move |id, event| {
+                let _ = tx.send(Msg::Lsp(id, event));
             })?;
+            self.warming.insert(server.id, Instant::now());
             self.servers.insert(cmd.clone(), server);
         }
         let server = self.servers.get_mut(&cmd).unwrap();
         let text = std::fs::read_to_string(&abs)?;
         server.open(&abs, &lang, &text);
         let character = lsp::utf16_col(text.lines().nth(ask.line as usize).unwrap_or(""), ask.col);
-        let method = match ask.kind {
+        let (line, kind) = (ask.line, ask.kind);
+        let method = match kind {
             AskKind::Definition => "textDocument/definition",
             AskKind::References => "textDocument/references",
             AskKind::Hover => "textDocument/hover",
         };
-        let id = server.request(method, &abs, ask.line, character);
-        self.lsp_requests.insert(id, ask.kind);
-        ctx.info(format!("asking {}… (first answers wait for indexing)", cmd[0]));
+        let id = server.request(method, &abs, line, character);
+        self.lsp_requests.insert(id, ask);
+        ctx.info(format!("asking {}…", cmd[0]));
         Ok(())
     }
 
+    fn on_lsp_event(&mut self, server: i64, event: lsp::Event, ctx: &mut Ctx) {
+        let name = self
+            .servers
+            .iter()
+            .find(|(_, s)| s.id == server)
+            .map_or(String::new(), |(c, _)| c[0].clone());
+        match event {
+            lsp::Event::Response(id, r) => {
+                if let Some(ask) = self.lsp_requests.remove(&id) {
+                    // Servers answer "nothing" while loading instead of waiting.
+                    let warming = self.warming.get(&server).is_some_and(|t| t.elapsed() < WARMUP);
+                    if warming && r.as_ref().is_ok_and(|v| is_empty_answer(ask.kind, v)) {
+                        self.retry = Some(ask);
+                        return ctx.info(format!("{name} is loading the project, will answer when ready…"));
+                    }
+                    self.on_lsp(ask.kind, r, ctx);
+                }
+            }
+            lsp::Event::Status(text) => ctx.info(format!("{name}: {text}")),
+            lsp::Event::Idle => {
+                if self.warming.remove(&server).is_some() {
+                    match self.retry.take() {
+                        Some(ask) => self.ask(ask, ctx),
+                        None => ctx.info(format!("{name} ready")),
+                    }
+                }
+            }
+            lsp::Event::Exited(stderr) => {
+                // Dropped so the next request starts a fresh one.
+                self.servers.retain(|_, s| s.id != server);
+                self.lsp_requests.clear();
+                self.warming.remove(&server);
+                self.retry = None;
+                let why = if stderr.is_empty() {
+                    "no error output".into()
+                } else {
+                    stderr
+                };
+                ctx.error(format!("{name} exited: {why}"));
+            }
+        }
+    }
+
     fn on_lsp(&mut self, kind: AskKind, r: Result<serde_json::Value, String>, ctx: &mut Ctx) {
+        let empty = |ctx: &mut Ctx| ctx.info("nothing found");
         let v = match r {
             Ok(v) => v,
             Err(e) => return ctx.error(format!("language server: {e}")),
@@ -293,12 +357,12 @@ impl PrScreen {
         match kind {
             AskKind::Hover => match lsp::hover_text(&v) {
                 Some(t) => self.hover = Some(t),
-                None => ctx.info("nothing to show"),
+                None => empty(ctx),
             },
             AskKind::Definition | AskKind::References => {
                 let locs = lsp::locations(&v);
                 match (kind, locs.len()) {
-                    (_, 0) => ctx.info("nothing found"),
+                    (_, 0) => empty(ctx),
                     (AskKind::Definition, 1) => self.open_location(&locs[0], ctx),
                     _ => self.pick_locations(locs),
                 }
@@ -398,9 +462,8 @@ impl PrScreen {
                     self.ask(ask, ctx);
                 }
             }
-            Msg::Lsp(id, r) if self.lsp_requests.contains_key(&id) => {
-                let kind = self.lsp_requests.remove(&id).unwrap();
-                self.on_lsp(kind, r, ctx);
+            Msg::Lsp(server, event) if self.servers.values().any(|s| s.id == server) => {
+                self.on_lsp_event(server, event, ctx)
             }
             Msg::FileText(key, path, r) if key == self.key => {
                 if let Some(b) = self.buffers.iter_mut().find(|b| b.path == path) {

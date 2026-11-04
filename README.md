@@ -103,6 +103,11 @@ Default language servers: `rust-analyzer`, `typescript-language-server`,
 `pyright-langserver`, `gopls`, `nil`, `lua-language-server`, `clangd`, `zls`,
 `ruby-lsp`.
 
+The first request starts the server and waits for it to load the project
+(progress shows in the status bar); the answer appears once it is ready. If
+a server misbehaves, `REVU_LSP_LOG=/tmp/lsp.log revu …` records everything it
+sends, and a crash shows the end of its error output.
+
 ## Keys
 
 Press `?` anywhere for the keys of the current screen.

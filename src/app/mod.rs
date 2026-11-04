@@ -41,8 +41,8 @@ pub enum Msg {
     Tree(Key, Result<Vec<String>>),
     FileText(Key, String, Result<String>),
     Worktree(Key, Result<PathBuf>),
-    /// Language-server response, by request id (not counted as a background job).
-    Lsp(i64, std::result::Result<serde_json::Value, String>),
+    /// From the language server with this id (not counted as a background job).
+    Lsp(i64, crate::lsp::Event),
     Mutated(Key, Mutation, Result<()>),
 }
 
