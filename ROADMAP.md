@@ -56,7 +56,31 @@ the current version are listed at the end.
 - [ ] Diagnostics from the language server on changed lines.
 - [ ] Clean shutdown of language servers; command to remove old worktrees
       (`~/.cache/revu/worktrees` is never cleaned today).
-- [ ] Workspace symbol search.
+- [ ] **Decide on symbol navigation** and its keys: a picker of the symbols
+      of the current file (LSP `textDocument/documentSymbol`, like VS Code's
+      Ctrl+Shift+O or Telescope's document symbols) and of the whole repo
+      (`workspace/symbol`, like Ctrl+T). `Ctrl-o` is already "jump back" as in
+      Vim, so pick keys that don't clash (e.g. `Ctrl-t`, `gs`/`gS`), or decide
+      it's not worth it.
+- [ ] **Language servers for every language**, not just the built-in table:
+      a much larger default list (e.g. derived from nvim-lspconfig or Helix's
+      `languages.toml`), language ids for any extension, several servers per
+      language, and project-root detection for monorepos (start the server at
+      the nearest `package.json`/`tsconfig.json`/`Cargo.toml`/`go.mod`/…
+      instead of the repo root).
+
+### Read-only Vim-like editor
+
+Make buffers and the diff feel like Neovim, still without editing:
+
+- [ ] More motions: `e`/`ge`, `f`/`t`/`;`/`,`, `%`, `{`/`}` paragraphs in
+      buffers, `H`/`M`/`L`, `zz`/`zt`/`zb`, counts (`5j`), marks and `''`.
+- [ ] `*` / `#` and `/` search in the diff too, with match highlighting.
+- [ ] Visual mode with yank to the system clipboard (`y`), line numbers
+      and paths (`yp` for `path:line`).
+- [ ] Splits (diff + definition side by side) and window motions.
+- [ ] Folding, horizontal scrolling, soft wrap toggle.
+- [ ] `:` command line (`:e path`, `:123`, `:q`) and configurable key maps.
 
 ## Dashboard and issues
 
