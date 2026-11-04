@@ -18,12 +18,18 @@ pub const HELP: &[(&str, &str)] = &[
     ("j/k g/G", "move"),
     ("Enter", "open PR / issue"),
     ("p / i", "repo tab: pull requests / issues"),
-    ("f", "cycle PR filter (all, review requested, assigned, mine, drafts)"),
+    (
+        "r a m d",
+        "PRs: review requested / assigned / mine / drafts (again: all)",
+    ),
+    ("f", "cycle the PR filter"),
     ("/", "filter PRs / search issues (GitHub syntax)"),
     ("o", "open in browser"),
     ("Ctrl-r", "refresh"),
     ("q", "quit"),
 ];
+
+const FILTER_KEYS: &str = "r review · a assigned · m mine · d drafts";
 
 const DEFAULT_ISSUE_QUERY: &str = "is:open sort:updated-desc";
 
@@ -45,6 +51,16 @@ impl Filter {
         Filter::Mine,
         Filter::Draft,
     ];
+
+    fn from_key(c: char) -> Option<Filter> {
+        Some(match c {
+            'r' => Filter::Review,
+            'a' => Filter::Assigned,
+            'm' => Filter::Mine,
+            'd' => Filter::Draft,
+            _ => return None,
+        })
+    }
 
     fn label(self) -> &'static str {
         match self {
@@ -83,6 +99,7 @@ pub struct MainScreen {
     /// Per repo, `None` while loading.
     prs: Vec<Option<Result<RepoPrs, String>>>,
     home: TableState,
+    home_filter: Filter,
     repos: Vec<RepoTab>,
     /// Text being typed after `/`.
     input: Option<String>,
@@ -106,6 +123,7 @@ impl MainScreen {
             tab: 0,
             prs,
             home: TableState::default().with_selected(0),
+            home_filter: Filter::All,
             repos,
             input: None,
         };
@@ -155,6 +173,7 @@ impl MainScreen {
         let mut out: Vec<_> = (0..self.prs.len())
             .filter_map(|i| Some((i, self.loaded(i)?)))
             .flat_map(|(i, r)| r.nodes.iter().map(move |pr| (i, pr)))
+            .filter(|(_, pr)| self.home_filter.keep(pr, me))
             .filter_map(|(i, pr)| {
                 let why = if pr.review_requested(me) {
                     "review"
@@ -170,6 +189,15 @@ impl MainScreen {
             .collect();
         out.sort_by(|a, b| b.1.updated_at.cmp(&a.1.updated_at));
         out
+    }
+
+    /// The PR filter of the current view (none on the issues view).
+    fn filter_mut(&mut self) -> Option<&mut Filter> {
+        match self.repo_idx() {
+            None => Some(&mut self.home_filter),
+            Some(i) if self.repos[i].issues_view => None,
+            Some(i) => Some(&mut self.repos[i].filter),
+        }
     }
 
     fn visible_prs(&self, i: usize, me: &str) -> Vec<&PrSummary> {
@@ -312,11 +340,16 @@ impl MainScreen {
                 }
             }
             KeyCode::Char('f') => {
-                if let Some(i) = self.repo_idx() {
-                    let t = &mut self.repos[i];
-                    let pos = Filter::ALL.iter().position(|f| *f == t.filter).unwrap_or(0);
-                    t.filter = Filter::ALL[(pos + 1) % Filter::ALL.len()];
-                    t.prs.select(Some(0));
+                if let Some(f) = self.filter_mut() {
+                    let pos = Filter::ALL.iter().position(|x| x == f).unwrap_or(0);
+                    *f = Filter::ALL[(pos + 1) % Filter::ALL.len()];
+                    self.cursor(&me).0.select(Some(0));
+                }
+            }
+            KeyCode::Char(c) if Filter::from_key(c).is_some() => {
+                if let (Some(f), Some(want)) = (self.filter_mut(), Filter::from_key(c)) {
+                    *f = if *f == want { Filter::All } else { want };
+                    self.cursor(&me).0.select(Some(0));
                 }
             }
             KeyCode::Char('/') => {
@@ -466,9 +499,14 @@ impl MainScreen {
             Constraint::Length(8),
             Constraint::Length(4),
         ];
-        let table = Table::new(rows, widths)
-            .row_highlight_style(SELECTED)
-            .block(ui::block(format!("for you ({})", items.len()), true));
+        let table = Table::new(rows, widths).row_highlight_style(SELECTED).block(ui::block(
+            format!(
+                "for you · {} ({}) · {FILTER_KEYS}",
+                self.home_filter.label(),
+                items.len()
+            ),
+            true,
+        ));
         f.render_stateful_widget(table, bottom, &mut self.home);
     }
 
@@ -504,6 +542,7 @@ impl MainScreen {
         if !t.text.is_empty() {
             title += &format!(" · /{}", t.text);
         }
+        title += &format!(" · {FILTER_KEYS}");
         let widths = [
             Constraint::Length(1),
             Constraint::Length(6),

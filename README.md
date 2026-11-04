@@ -118,7 +118,7 @@ Press `?` anywhere for the keys of the current screen.
 |---|---|
 | `1`-`9`, `H`/`L`, `Tab` | switch tab (1 = home) |
 | `p` / `i` | pull requests / issues of the repo |
-| `f` | PR filter: all, review requested, assigned, mine, drafts |
+| `r` `a` `m` `d` | PR filter: review requested, assigned, mine, drafts (same key again: all); `f` cycles |
 | `/` | filter PRs, or search issues with GitHub syntax (`is:closed label:bug`) |
 | `Enter`, `o` | open, open in browser |
 | `Ctrl-r` | refresh |
