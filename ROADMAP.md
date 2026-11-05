@@ -33,6 +33,13 @@ the current version are listed at the end.
       buffers still cut long lines.
 - [x] Hide the file list (`Ctrl-e`).
 - [x] Resize the panes by dragging their border with the mouse, or with `<` `>`.
+- [ ] **Mouse range selection in the diff**: dragging over lines selects
+      them like `v` does (sets the anchor), so a range comment is one drag
+      plus `c`, with no need to press `v` first. To decide: revu captures
+      the mouse, so the terminal's own text selection (copy) only works with
+      Shift-drag today and a drag would now mean "range" instead; whether
+      releasing the drag opens the comment box directly; what a drag across
+      hunks, files or the file list does; and the same in the code buffers.
 - [ ] Expand context around hunks (the full file is already available).
 - [ ] Directory tree in the file list, with folding.
 - [ ] Diff for files GitHub returns no patch for (binaries aside): compute it
