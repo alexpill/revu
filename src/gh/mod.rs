@@ -13,9 +13,15 @@ use std::collections::HashMap;
 use std::io::Write;
 use std::process::{Command, Stdio};
 
+/// Both make gh color its JSON even into a pipe, which then doesn't parse.
+fn command(args: &[&str]) -> Command {
+    let mut cmd = Command::new("gh");
+    cmd.args(args).env_remove("CLICOLOR_FORCE").env_remove("GH_FORCE_TTY");
+    cmd
+}
+
 fn gh(args: &[&str], stdin: Option<&str>) -> Result<Vec<u8>> {
-    let mut child = Command::new("gh")
-        .args(args)
+    let mut child = command(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -273,6 +279,15 @@ pub fn browse(repo: &str, number: u64) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn gh_never_forced_to_color() {
+        let cmd = super::command(&["api", "user"]);
+        let envs: Vec<_> = cmd.get_envs().collect();
+        for var in ["CLICOLOR_FORCE", "GH_FORCE_TTY"] {
+            assert!(envs.contains(&(var.as_ref(), None)), "{var} not removed");
+        }
+    }
+
     #[test]
     fn encode() {
         assert_eq!(super::encode_path("a b/c#d.rs"), "a%20b/c%23d.rs");
