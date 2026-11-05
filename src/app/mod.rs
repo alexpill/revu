@@ -22,7 +22,7 @@ use ratatui::DefaultTerminal;
 use ratatui::Frame;
 use ratatui::crossterm::event::{
     self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton,
-    MouseEventKind,
+    MouseEvent, MouseEventKind,
 };
 use ratatui::crossterm::execute;
 use ratatui::layout::{Constraint, Layout, Position};
@@ -393,10 +393,12 @@ impl App {
                     Event::Mouse(m) if m.kind == MouseEventKind::ScrollLeft => self.on_key(KeyCode::Left.into()),
                     Event::Mouse(m) if m.kind == MouseEventKind::ScrollRight => self.on_key(KeyCode::Right.into()),
                     Event::Mouse(m) if m.kind == MouseEventKind::Down(MouseButton::Left) => {
-                        self.on_click(Position::new(m.column, m.row))
+                        if !self.on_mouse(m) {
+                            self.on_click(Position::new(m.column, m.row))
+                        }
                     }
-                    // Motion reports flood in while the pointer moves; don't redraw for them.
-                    Event::Mouse(_) => {
+                    // Motion reports flood in while the pointer moves; redraw only when a border reacts.
+                    Event::Mouse(m) if !self.on_mouse(m) => {
                         timeout = Duration::ZERO;
                         continue;
                     }
@@ -487,6 +489,16 @@ impl App {
             None => self.main.on_click(pos, &mut self.ctx),
         };
         self.apply(action);
+    }
+
+    /// Pane borders: hover, grab and drag. True when one reacted.
+    fn on_mouse(&mut self, m: MouseEvent) -> bool {
+        match self.stack.last_mut() {
+            Some(Screen::Pr(s)) if self.ctx.draft.is_none() && self.ctx.actions.is_none() && !self.help => {
+                s.on_mouse(m)
+            }
+            _ => false,
+        }
     }
 
     fn apply(&mut self, action: Action) {

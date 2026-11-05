@@ -1,5 +1,7 @@
 //! Small rendering helpers shared by screens.
 
+use ratatui::Frame;
+use ratatui::crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::{Constraint, Flex, Layout, Position, Rect};
 use ratatui::style::{Color, Style, Stylize};
 use ratatui::text::{Line, Span};
@@ -49,6 +51,113 @@ pub fn tab_rects(titles: &[Line], area: Rect) -> Vec<Rect> {
             r
         })
         .collect()
+}
+
+/// Neither side of a [`Split`] gets narrower than this.
+const MIN_PANE: u16 = 16;
+
+/// The border between two side-by-side panes: dragged with the mouse or nudged
+/// with `<` `>`, as in tmux. It sizes one pane, the other takes the rest.
+#[derive(Default)]
+pub struct Split {
+    /// The sized pane is the right one.
+    right: bool,
+    /// Its width once the user moved the border.
+    width: Option<u16>,
+    /// Both panes and the sized pane's width, as last laid out.
+    area: Rect,
+    cur: u16,
+    hover: bool,
+    drag: bool,
+}
+
+impl Split {
+    pub fn right() -> Self {
+        Self {
+            right: true,
+            ..Self::default()
+        }
+    }
+
+    /// Lays `area` out as [left, right], the sized pane `default` wide until moved.
+    pub fn areas(&mut self, area: Rect, default: u16) -> [Rect; 2] {
+        self.area = area;
+        self.cur = clamp_pane(self.width.unwrap_or(default), area.width);
+        Layout::horizontal([Constraint::Length(self.left()), Constraint::Fill(1)]).areas(area)
+    }
+
+    /// Width of the left pane.
+    fn left(&self) -> u16 {
+        if self.right {
+            self.area.width - self.cur
+        } else {
+            self.cur
+        }
+    }
+
+    fn set_left(&mut self, left: u16) {
+        let w = if self.right {
+            self.area.width.saturating_sub(left)
+        } else {
+            left
+        };
+        self.cur = clamp_pane(w, self.area.width);
+        self.width = Some(self.cur);
+    }
+
+    /// Moves the border `by` columns (negative: to the left), once laid out.
+    pub fn nudge(&mut self, by: i16) {
+        if self.area.is_empty() {
+            return;
+        }
+        self.set_left(self.left().saturating_add_signed(by));
+    }
+
+    /// Either edge drawn there: the left pane's right one or the right pane's left one.
+    fn on_border(&self, pos: Position) -> bool {
+        let x = self.area.x + self.left();
+        self.area.contains(pos) && (pos.x == x || pos.x + 1 == x)
+    }
+
+    /// Hover, grab, drag and release; true when the border reacted and needs a redraw.
+    pub fn on_mouse(&mut self, m: MouseEvent) -> bool {
+        let pos = Position::new(m.column, m.row);
+        match m.kind {
+            MouseEventKind::Down(MouseButton::Left) => {
+                self.drag = self.on_border(pos);
+                self.drag
+            }
+            MouseEventKind::Drag(MouseButton::Left) if self.drag => {
+                // The left pane's right edge follows the pointer.
+                self.set_left((m.column + 1).saturating_sub(self.area.x));
+                true
+            }
+            MouseEventKind::Up(MouseButton::Left) if self.drag => {
+                self.drag = false;
+                self.hover = self.on_border(pos);
+                true
+            }
+            MouseEventKind::Moved => {
+                let hover = self.on_border(pos);
+                std::mem::replace(&mut self.hover, hover) != hover
+            }
+            _ => false,
+        }
+    }
+
+    /// Highlights the border while hovered or dragged; call once both panes are drawn.
+    pub fn draw(&self, f: &mut Frame) {
+        if self.hover || self.drag {
+            let x = (self.area.x + self.left()).saturating_sub(1);
+            let edges = Rect::new(x, self.area.y, 2, self.area.height).intersection(self.area);
+            f.buffer_mut().set_style(edges, Style::new().fg(Color::Yellow));
+        }
+    }
+}
+
+/// Keeps `MIN_PANE` columns on both sides of `total` when there is room.
+fn clamp_pane(w: u16, total: u16) -> u16 {
+    w.max(MIN_PANE).min(total.saturating_sub(MIN_PANE))
 }
 
 /// Index of the row under `pos` in a one-line-per-row view starting at row `offset`.
@@ -216,6 +325,46 @@ mod tests {
     fn timestamps() {
         assert_eq!(super::parse_ts("1970-01-02T00:00:01Z"), Some(86401));
         assert_eq!(super::parse_ts("2024-03-01T00:00:00Z"), Some(1_709_251_200));
+    }
+
+    #[test]
+    fn split_drags_within_bounds() {
+        use ratatui::crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+        use ratatui::layout::Rect;
+        let ev = |kind, column| MouseEvent {
+            kind,
+            column,
+            row: 5,
+            modifiers: KeyModifiers::NONE,
+        };
+        let area = Rect::new(10, 2, 100, 20);
+        let mut s = super::Split::default();
+        let [l, r] = s.areas(area, 30);
+        assert_eq!((l.width, r.x), (30, 40));
+        // A press off the border is left to the click handler.
+        assert!(!s.on_mouse(ev(MouseEventKind::Down(MouseButton::Left), 41)));
+        assert!(!s.on_mouse(ev(MouseEventKind::Drag(MouseButton::Left), 60)));
+        assert_eq!(s.areas(area, 30)[0].width, 30);
+        // Both edges of the border grab it; the left pane's edge follows the pointer.
+        assert!(s.on_mouse(ev(MouseEventKind::Moved, 39)));
+        assert!(!s.on_mouse(ev(MouseEventKind::Moved, 40)), "still hovering");
+        assert!(s.on_mouse(ev(MouseEventKind::Down(MouseButton::Left), 40)));
+        assert!(s.on_mouse(ev(MouseEventKind::Drag(MouseButton::Left), 59)));
+        assert_eq!(s.areas(area, 30)[0].width, 50);
+        // Neither pane goes below MIN_PANE.
+        s.on_mouse(ev(MouseEventKind::Drag(MouseButton::Left), 0));
+        assert_eq!(s.areas(area, 30)[0].width, 16);
+        s.on_mouse(ev(MouseEventKind::Drag(MouseButton::Left), 200));
+        assert_eq!(s.areas(area, 30)[1].width, 16);
+        assert!(s.on_mouse(ev(MouseEventKind::Up(MouseButton::Left), 200)));
+        assert!(!s.on_mouse(ev(MouseEventKind::Drag(MouseButton::Left), 50)));
+
+        // A right-sized pane keeps its width when the terminal grows.
+        let mut s = super::Split::right();
+        assert_eq!(s.areas(area, 38)[1].width, 38);
+        s.nudge(-2);
+        s.nudge(-2);
+        assert_eq!(s.areas(Rect::new(0, 0, 200, 20), 38)[1].width, 42);
     }
 
     #[test]

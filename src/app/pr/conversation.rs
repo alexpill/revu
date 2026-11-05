@@ -5,7 +5,7 @@ use crate::app::ui::{self, DIM};
 use crate::gh::model::{PrDetail, Thread};
 use crate::highlight::Highlighter;
 use ratatui::Frame;
-use ratatui::layout::{Constraint, Layout, Rect};
+use ratatui::layout::Rect;
 use ratatui::style::Stylize;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Paragraph, Wrap};
@@ -21,8 +21,8 @@ pub fn state_badge(d: &PrDetail) -> Span<'static> {
 }
 
 /// Returns the clamped scroll offset.
-pub fn render(f: &mut Frame, area: Rect, d: &PrDetail, hl: &Highlighter, scroll: u16) -> u16 {
-    let [main, side] = Layout::horizontal([Constraint::Fill(1), Constraint::Length(38)]).areas(area);
+pub fn render(f: &mut Frame, area: Rect, d: &PrDetail, hl: &Highlighter, scroll: u16, split: &mut ui::Split) -> u16 {
+    let [main, side] = split.areas(area, 38);
 
     let mut lines = vec![
         Line::from(vec![
@@ -63,6 +63,7 @@ pub fn render(f: &mut Frame, area: Rect, d: &PrDetail, hl: &Highlighter, scroll:
             .block(ui::block("details", false)),
         side,
     );
+    split.draw(f);
     scroll
 }
 

@@ -32,6 +32,7 @@ the current version are listed at the end.
 - [x] Horizontal scrolling and line wrap (`Alt-z`) in the diff; the code
       buffers still cut long lines.
 - [x] Hide the file list (`Ctrl-e`).
+- [x] Resize the panes by dragging their border with the mouse, or with `<` `>`.
 - [ ] Expand context around hunks (the full file is already available).
 - [ ] Directory tree in the file list, with folding.
 - [ ] Diff for files GitHub returns no patch for (binaries aside): compute it

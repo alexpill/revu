@@ -8,8 +8,8 @@ use crate::gh::model::{ChangedFile, PrDetail, Thread};
 use crate::gh::mutation::Mutation;
 use crate::highlight::{Highlighter, StyledLine};
 use ratatui::Frame;
-use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use ratatui::layout::{Constraint, Layout, Margin, Position, Rect};
+use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent};
+use ratatui::layout::{Margin, Position, Rect};
 use ratatui::style::{Color, Modifier, Style, Stylize};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{List, ListItem, ListState, Paragraph};
@@ -94,6 +94,7 @@ pub struct FilesView {
     hscroll: usize,
     wrap: bool,
     hide_list: bool,
+    split: ui::Split,
     /// Columns left for code after the gutter, as last rendered.
     code_w: usize,
     /// Start row of a visual (range) selection.
@@ -121,6 +122,7 @@ impl FilesView {
             hscroll: 0,
             wrap: false,
             hide_list: false,
+            split: ui::Split::default(),
             code_w: 80,
             anchor: None,
             pending_g: false,
@@ -271,6 +273,8 @@ impl FilesView {
                 self.hide_list = !self.hide_list;
                 self.focus_diff = true;
             }
+            KeyCode::Char('<') => self.split.nudge(-4),
+            KeyCode::Char('>') => self.split.nudge(4),
             KeyCode::Char('z') if alt => {
                 self.wrap = !self.wrap;
                 self.hscroll = 0;
@@ -471,15 +475,20 @@ impl FilesView {
         }
     }
 
+    /// The border between the list and the diff.
+    pub fn on_mouse(&mut self, m: MouseEvent) -> bool {
+        !self.hide_list && self.split.on_mouse(m)
+    }
+
     pub fn render(&mut self, f: &mut Frame, area: Rect, detail: Option<&PrDetail>, hl: &Highlighter) {
         if self.hide_list {
             self.list_area = Rect::default();
             return self.render_diff(f, area, detail, hl);
         }
-        let list_w = (area.width / 3).clamp(24, 56);
-        let [list_area, diff_area] = Layout::horizontal([Constraint::Length(list_w), Constraint::Fill(1)]).areas(area);
+        let [list_area, diff_area] = self.split.areas(area, (area.width / 3).clamp(24, 56));
         self.render_list(f, list_area, detail);
         self.render_diff(f, diff_area, detail, hl);
+        self.split.draw(f);
     }
 
     fn render_list(&mut self, f: &mut Frame, area: Rect, detail: Option<&PrDetail>) {

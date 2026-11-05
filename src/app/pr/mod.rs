@@ -14,7 +14,7 @@ use anyhow::{Result, anyhow};
 use code::Buffer;
 use files::FilesView;
 use ratatui::Frame;
-use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent};
 use ratatui::layout::{Constraint, Layout, Position, Rect};
 use ratatui::style::{Style, Stylize};
 use ratatui::text::Line;
@@ -28,6 +28,7 @@ pub const HELP: &[(&str, &str)] = &[
     ("j/k Ctrl-d/u g/G", "scroll / move"),
     ("Tab", "files: switch list / diff"),
     ("Ctrl-e", "files: hide / show the list"),
+    ("< > / drag border", "resize the panes"),
     ("Alt-z", "diff: wrap long lines (else they scroll sideways)"),
     ("click / wheel", "tab, file, cursor / scroll"),
     ("[ ]", "previous / next file"),
@@ -56,7 +57,7 @@ pub const HELP: &[(&str, &str)] = &[
 ];
 
 /// Plain keys the PR screen uses on any tab; custom commands can't take them.
-pub const KEYS: &str = "123456789?qoeHLxSCMjkgGhlwb0$[]{} zvcarDRKnN/";
+pub const KEYS: &str = "123456789?qoeHLxSCMjkgGhlwb0$[]{} zvcarDRKnN/<>";
 
 const SUBMIT: &[(char, &str, Option<&str>)] = &[
     ('c', "comment", Some("COMMENT")),
@@ -123,6 +124,8 @@ pub struct PrScreen {
     buffers: Vec<Buffer>,
     tab: usize,
     conv_scroll: u16,
+    /// Between the conversation and its sidebar.
+    side: ui::Split,
     submit_menu: bool,
     /// Asking whether to clone the repo, for a feature that needs it.
     clone_prompt: bool,
@@ -154,6 +157,7 @@ impl PrScreen {
             buffers: Vec::new(),
             tab: 0,
             conv_scroll: 0,
+            side: ui::Split::right(),
             submit_menu: false,
             clone_prompt: false,
             picker: None,
@@ -656,6 +660,8 @@ impl PrScreen {
             KeyCode::Char('k') | KeyCode::Up => self.conv_scroll = self.conv_scroll.saturating_sub(1),
             KeyCode::Char('g') => self.conv_scroll = 0,
             KeyCode::Char('G') => self.conv_scroll = u16::MAX / 2,
+            KeyCode::Char('<') => self.side.nudge(-4),
+            KeyCode::Char('>') => self.side.nudge(4),
             _ => {}
         }
         Action::None
@@ -684,6 +690,18 @@ impl PrScreen {
             t => self.buffers[t - FIRST_BUFFER].on_click(pos),
         }
         Action::None
+    }
+
+    /// Drags of the border between panes; popups keep the mouse to themselves.
+    pub fn on_mouse(&mut self, m: MouseEvent) -> bool {
+        if self.hover.is_some() || self.submit_menu || self.clone_prompt || self.picker.is_some() {
+            return false;
+        }
+        match (self.tab, &mut self.files) {
+            (0, _) => self.side.on_mouse(m),
+            (FILES_TAB, Some(Ok(view))) => view.on_mouse(m),
+            _ => false,
+        }
     }
 
     pub fn render(&mut self, f: &mut Frame, area: Rect, ctx: &Ctx) {
@@ -731,7 +749,7 @@ impl PrScreen {
         f.render_widget(tabs, tabs_area);
 
         match self.tab {
-            0 => self.conv_scroll = conversation::render(f, body, d, &ctx.hl, self.conv_scroll),
+            0 => self.conv_scroll = conversation::render(f, body, d, &ctx.hl, self.conv_scroll, &mut self.side),
             FILES_TAB => match &mut self.files {
                 None => f.render_widget(Paragraph::new(" loading files…").dark_gray(), body),
                 Some(Err(e)) => f.render_widget(Paragraph::new(format!(" {e}")).red(), body),
