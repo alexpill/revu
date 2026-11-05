@@ -38,8 +38,7 @@ impl IssueScreen {
 
     fn load(&self, ctx: &mut Ctx) {
         let key = self.key;
-        let (owner, name) = ctx.cfg.repos[key.0].owner_name();
-        let (owner, name) = (owner.to_string(), name.to_string());
+        let (owner, name) = ctx.owner_name(key.0);
         ctx.spawn(move || Msg::Issue(key, gh::issue(&owner, &name, key.1)));
     }
 

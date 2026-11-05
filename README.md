@@ -9,9 +9,11 @@ the code (any file, go to definition, references) to check how a change fits.
 It is built for large PRs, including AI-generated ones and the bot reviews
 they come with.
 
-- **Dashboard across repos**: open PRs, review requests, assignments, your
-  PRs, drafts and failing CI for every configured repository, plus a
-  "for you" list. Not tied to the directory you run it from.
+- **Everything that involves you, across GitHub**: open PRs and issues
+  grouped by repo, pinned repos first, then what waits on you (review
+  requests, changes requested on your PRs, red CI, assignments). Switch to
+  all the open items of your pinned repos, or of every repo you can access.
+  No config needed.
 - **PR page**: description, timeline (comments, reviews, threads), reviewers,
   assignees, labels, mergeability and checks.
 - **Files changed**: syntax-highlighted diff with review threads inline,
@@ -23,7 +25,8 @@ they come with.
 - **Code navigation**: fuzzy-open any file of the PR head, `gd` / `gr` / `K`
   through a language server running on a detached worktree of the PR, jump
   list.
-- **Issues**: per-repo list with GitHub search syntax.
+- **Local clones remembered**: run `revu` from a clone once, or clone from
+  the list with `c`, and the repo gets local file reads and language servers.
 
 Everything goes through the [GitHub CLI](https://cli.github.com/): if
 `gh auth status` is fine, `revu` works, with whichever account `gh` is using
@@ -54,21 +57,16 @@ Rust toolchain; a binary cache is on the [roadmap](ROADMAP.md).
 ## Usage
 
 ```sh
-revu                                   # repos from the config file (or the current clone)
-revu .                                 # just the repo you're in
-revu ~/code/api ~/code/web             # several local clones
-revu --repo owner/name --repo git@github.com:owner/other.git
+revu                    # what involves you; run from a clone, that repo is pinned
+revu --theme Nord
 ```
 
-`REPO` (positional or `--repo`, repeatable) is a local directory, `owner/name`
-or a GitHub URL (https or ssh). Repos given on the command line replace the
-configured ones, so no config file is needed. A local directory gives the
-same benefits as a configured `path` (see below); for a fork, the `upstream`
-remote wins over `origin`. `--repo owner/name` keeps the `path` the config
-file has for that repo, if any.
+Run from a clone, `revu` pins its repo for that run and remembers where the
+clone is (its main checkout, if you are in a linked worktree). For a fork,
+the `upstream` remote wins over `origin`.
 
-Other options: `--config <FILE>` to use another config file, `--theme <NAME>`
-to override the theme, `--help`, `--version`.
+Options: `--config <FILE>` to use another config file, `--theme <NAME>` to
+override the theme, `--help`, `--version`.
 
 ## Configuration
 
@@ -76,10 +74,11 @@ to override the theme, `--help`, `--version`.
 
 ```toml
 theme = "Catppuccin Mocha"     # optional, any bat theme name
+clone_dir = "~/code"           # optional: where `c` clones repos (default ~/code)
 
-[[repos]]
+[[repos]]                      # pinned: listed first, see the "pinned repos" view
 name = "owner/repo"
-path = "~/code/repo"           # optional: local clone
+path = "~/code/repo"           # optional: local clone (else the remembered one)
 
 [[repos]]
 name = "owner/other-repo"
@@ -89,10 +88,10 @@ ts = ["typescript-language-server", "--stdio"]
 nix = ["nixd"]
 ```
 
-Without any `[[repos]]` (and no repo on the command line), `revu` uses the
-GitHub repository of the current directory.
-
-Giving a repo a local `path` enables:
+Local clones `revu` learns about (run from a clone, or cloned with `c`) are
+remembered in `$XDG_STATE_HOME/revu/links` (usually
+`~/.local/state/revu/links`), a file `revu` owns; a `path` in the config
+wins over it. A repo with a local clone enables:
 
 - reading files from the clone (`git show`), with no API size limits;
 - language servers: on the first `gd`, `revu` fetches `refs/pull/N/head` and
@@ -112,15 +111,17 @@ sends, and a crash shows the end of its error output.
 
 Press `?` anywhere for the keys of the current screen.
 
-**Dashboard and repositories**
+**Home**
 
 | Key | Action |
 |---|---|
-| `1`-`9`, `H`/`L`, `Tab` | switch tab (1 = home) |
-| `p` / `i` | pull requests / issues of the repo |
-| `r` `a` `m` `d` | PR filter: review requested, assigned, mine, drafts (same key again: all); `f` cycles |
-| `/` | filter PRs, or search issues with GitHub syntax (`is:closed label:bug`) |
-| `Enter`, `o` | open, open in browser |
+| `1`-`3`, `H`/`L`, `Tab` | activity (PRs and issues), pull requests, issues |
+| `v` | view: involving you, pinned repos, everything you can access |
+| `r` `a` `m` `d` | filter: review requested, assigned, mine, drafts (same key again: all); `f` cycles |
+| `/` | filter by text |
+| `Enter` | open a PR or issue, fold or unfold a repo |
+| `c` | clone the repo into `clone_dir` |
+| `o` | open in browser |
 | `Ctrl-r` | refresh |
 
 **Pull request**
@@ -164,7 +165,7 @@ src/
 ├── lsp.rs           minimal LSP client (JSON-RPC over stdio)
 └── app/
     ├── mod.rs       event loop, screen stack, background jobs
-    ├── main_screen.rs  dashboard and repository tabs
+    ├── main_screen.rs  home: activity, PRs and issues by repo
     ├── issue.rs     issue page
     ├── picker.rs    fuzzy picker (files, LSP results)
     ├── ui.rs        shared rendering helpers

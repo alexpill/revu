@@ -2,11 +2,12 @@
 //! `--config`), then overridden by command-line arguments.
 //!
 //! ```toml
-//! [[repos]]
+//! [[repos]]               # pinned: listed first, with all their open PRs and issues
 //! name = "owner/repo"
-//! path = "~/code/repo"   # optional local clone: enables local diff/file reads and LSP
+//! path = "~/code/repo"   # optional local clone (otherwise the remembered one, if any)
 //!
 //! theme = "Catppuccin Mocha"   # optional, any bat theme
+//! clone_dir = "~/code"        # where `c` clones repos (default ~/code)
 //!
 //! [lsp]                   # file extension -> server command (overrides the defaults)
 //! rs = ["rust-analyzer"]
@@ -27,18 +28,19 @@ pub struct Config {
     pub lsp: HashMap<String, Vec<String>>,
     /// bat theme name for code, e.g. "Nord" or "Catppuccin Mocha".
     pub theme: Option<String>,
+    pub clone_dir: Option<PathBuf>,
+}
+
+impl Config {
+    pub fn clone_dir(&self) -> PathBuf {
+        self.clone_dir.clone().unwrap_or_else(|| home().join("code"))
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct RepoConfig {
     pub name: String,
     pub path: Option<PathBuf>,
-}
-
-impl RepoConfig {
-    pub fn owner_name(&self) -> (&str, &str) {
-        self.name.split_once('/').unwrap_or(("", &self.name))
-    }
 }
 
 pub fn config_path() -> PathBuf {
@@ -53,6 +55,37 @@ pub fn cache_dir() -> PathBuf {
         .map(PathBuf::from)
         .unwrap_or_else(|| home().join(".cache"));
     base.join("revu")
+}
+
+/// Local clones revu learned about (run from a clone, or cloned by revu), one
+/// `owner/name<TAB>path` per line. Owned by revu, unlike the config file.
+fn links_path() -> PathBuf {
+    let base = std::env::var_os("XDG_STATE_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| home().join(".local").join("state"));
+    base.join("revu").join("links")
+}
+
+/// Remembered clones by lowercased repo name; vanished directories are left out.
+pub fn links() -> HashMap<String, PathBuf> {
+    let text = std::fs::read_to_string(links_path()).unwrap_or_default();
+    parse_links(&text).filter(|(_, p)| p.is_dir()).collect()
+}
+
+fn parse_links(text: &str) -> impl Iterator<Item = (String, PathBuf)> + '_ {
+    text.lines()
+        .filter_map(|l| l.split_once('\t'))
+        .map(|(n, p)| (n.to_lowercase(), PathBuf::from(p)))
+}
+
+pub fn save_link(name: &str, path: &Path) -> Result<()> {
+    let file = links_path();
+    let text = std::fs::read_to_string(&file).unwrap_or_default();
+    let mut links: Vec<_> = parse_links(&text).filter(|(n, _)| *n != name.to_lowercase()).collect();
+    links.push((name.to_lowercase(), path.to_path_buf()));
+    let out: String = links.iter().map(|(n, p)| format!("{n}\t{}\n", p.display())).collect();
+    std::fs::create_dir_all(file.parent().unwrap())?;
+    std::fs::write(&file, out).with_context(|| format!("writing {}", file.display()))
 }
 
 fn home() -> PathBuf {
@@ -81,46 +114,17 @@ pub fn load(args: &Args) -> Result<Config> {
     if let Some(theme) = &args.theme {
         cfg.theme = Some(theme.clone());
     }
-    if !args.repos.is_empty() {
-        let mut repos: Vec<RepoConfig> = Vec::new();
-        for spec in &args.repos {
-            let mut r = resolve(spec)?;
-            // `--repo owner/name` keeps the local path the config knows for it.
-            if r.path.is_none() {
-                r.path = cfg
-                    .repos
-                    .iter()
-                    .find(|c| c.name.eq_ignore_ascii_case(&r.name))
-                    .and_then(|c| c.path.clone());
-            }
-            if !repos.iter().any(|x| x.name.eq_ignore_ascii_case(&r.name)) {
-                repos.push(r);
-            }
+    cfg.clone_dir = cfg.clone_dir.as_deref().map(expand_tilde);
+    // Run from a clone: remember where it is, and pin it for this run.
+    if let Ok(r) = local_repo(Path::new(".")) {
+        if let Some(p) = &r.path {
+            let _ = save_link(&r.name, &main_checkout(p));
         }
-        cfg.repos = repos;
-    } else if cfg.repos.is_empty()
-        && let Ok(r) = local_repo(Path::new("."))
-    {
-        // Nothing configured: use the repo we're standing in.
-        cfg.repos.push(r);
+        if !cfg.repos.iter().any(|c| c.name.eq_ignore_ascii_case(&r.name)) {
+            cfg.repos.insert(0, r);
+        }
     }
     Ok(cfg)
-}
-
-/// A repo given on the command line: local directory, GitHub URL or owner/name.
-fn resolve(spec: &str) -> Result<RepoConfig> {
-    let dir = expand_tilde(Path::new(spec));
-    if dir.is_dir() {
-        return local_repo(&dir);
-    }
-    if let Some(name) = parse_github_remote(spec) {
-        return Ok(RepoConfig { name, path: None });
-    }
-    validate_name(spec).map_err(|_| anyhow!("{spec:?} is not a directory, a GitHub URL or owner/name"))?;
-    Ok(RepoConfig {
-        name: spec.to_string(),
-        path: None,
-    })
 }
 
 /// Names end up inlined in GraphQL queries, so only allow GitHub's charset.
@@ -133,7 +137,7 @@ fn validate_name(name: &str) -> Result<()> {
 }
 
 /// The GitHub repo of a local clone, with the clone's root as path.
-fn local_repo(dir: &Path) -> Result<RepoConfig> {
+pub fn local_repo(dir: &Path) -> Result<RepoConfig> {
     let git = |args: &[&str]| -> Option<String> {
         let out = Command::new("git").arg("-C").arg(dir).args(args).output().ok()?;
         out.status
@@ -148,6 +152,23 @@ fn local_repo(dir: &Path) -> Result<RepoConfig> {
         name,
         path: Some(PathBuf::from(top)),
     })
+}
+
+/// The main checkout when `dir` is a linked worktree: worktrees come and go.
+fn main_checkout(dir: &Path) -> PathBuf {
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(["rev-parse", "--path-format=absolute", "--git-common-dir"])
+        .output();
+    let common = out
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| PathBuf::from(String::from_utf8_lossy(&o.stdout).trim()));
+    match common.as_deref().filter(|c| c.ends_with(".git")).and_then(Path::parent) {
+        Some(main) => main.to_path_buf(),
+        None => dir.to_path_buf(), // bare repos and the like
+    }
 }
 
 /// From `git remote -v` output: `upstream` first (PRs of a fork's parent
@@ -207,10 +228,8 @@ mod tests {
     }
 
     #[test]
-    fn specs() {
-        assert_eq!(resolve("git@github.com:a/b.git").unwrap().name, "a/b");
-        assert_eq!(resolve("https://github.com/a/b").unwrap().name, "a/b");
-        assert_eq!(resolve("a/b-not-a-dir").unwrap().name, "a/b-not-a-dir");
-        assert!(resolve("not a repo").is_err());
+    fn links_file() {
+        let v: Vec<_> = parse_links("Org/Repo\t/a b/c\nbroken line\n").collect();
+        assert_eq!(v, vec![("org/repo".to_string(), PathBuf::from("/a b/c"))]);
     }
 }

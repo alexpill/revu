@@ -32,7 +32,7 @@ fn git(dir: &Path, args: &[&str]) -> Result<String> {
 }
 
 impl Source {
-    fn owner_name(&self) -> (&str, &str) {
+    pub fn owner_name(&self) -> (&str, &str) {
         self.repo.split_once('/').unwrap_or(("", &self.repo))
     }
 

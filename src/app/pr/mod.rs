@@ -116,6 +116,8 @@ pub struct PrScreen {
     tab: usize,
     conv_scroll: u16,
     submit_menu: bool,
+    /// Asking whether to clone the repo, for a feature that needs it.
+    clone_prompt: bool,
     picker: Option<(Picker, PickFor)>,
     /// All paths of the PR head, loaded on first Ctrl-p.
     tree: Option<Vec<String>>,
@@ -145,6 +147,7 @@ impl PrScreen {
             tab: 0,
             conv_scroll: 0,
             submit_menu: false,
+            clone_prompt: false,
             picker: None,
             tree: None,
             jumps: Vec::new(),
@@ -167,20 +170,15 @@ impl PrScreen {
         s
     }
 
-    fn owner_name(&self, ctx: &Ctx) -> (String, String) {
-        let (o, n) = ctx.cfg.repos[self.key.0].owner_name();
-        (o.to_string(), n.to_string())
-    }
-
     fn load(&self, ctx: &mut Ctx) {
         let key = self.key;
-        let (owner, name) = self.owner_name(ctx);
+        let (owner, name) = ctx.owner_name(key.0);
         ctx.spawn(move || Msg::Pr(key, gh::pr(&owner, &name, key.1)));
     }
 
     fn load_files(&self, ctx: &mut Ctx) {
         let key = self.key;
-        let (owner, name) = self.owner_name(ctx);
+        let (owner, name) = ctx.owner_name(key.0);
         ctx.spawn(move || Msg::Files(key, gh::pr_files(&owner, &name, key.1)));
     }
 
@@ -258,6 +256,7 @@ impl PrScreen {
                 }
             }
             Some(Err(e)) => ctx.error(e.clone()),
+            None if ctx.sources[self.key.0].local.is_none() => self.clone_prompt = true,
             None => {
                 let first = self.pending_ask.replace(ask).is_none();
                 let Some(oid) = self.detail().map(|d| d.head_ref_oid.clone()) else {
@@ -422,7 +421,10 @@ impl PrScreen {
             _ if path.starts_with('/') => PathBuf::new(),
             (Some(Ok(wt)), _) => wt.clone(),
             (_, Some(local)) => local.clone(), // may not be at the PR head
-            _ => return ctx.error("needs a local clone: set `path` for this repo in the config"),
+            _ => {
+                self.clone_prompt = true;
+                return;
+            }
         };
         ctx.open_in_editor(base.join(path), line + 1);
     }
@@ -491,6 +493,12 @@ impl PrScreen {
 
     pub fn on_key(&mut self, k: KeyEvent, ctx: &mut Ctx) -> Action {
         if self.hover.take().is_some() {
+            return Action::None;
+        }
+        if std::mem::take(&mut self.clone_prompt) {
+            if k.code == KeyCode::Char('y') {
+                ctx.clone_repo(self.key.0);
+            }
             return Action::None;
         }
         if self.submit_menu {
@@ -605,7 +613,11 @@ impl PrScreen {
 
     pub fn on_click(&mut self, pos: Position, _ctx: &mut Ctx) -> Action {
         // A click dismisses popups rather than reaching what's under them.
-        if self.hover.take().is_some() || std::mem::take(&mut self.submit_menu) || self.picker.is_some() {
+        if self.hover.take().is_some()
+            || std::mem::take(&mut self.submit_menu)
+            || std::mem::take(&mut self.clone_prompt)
+            || self.picker.is_some()
+        {
             return Action::None;
         }
         if let Some(t) = self.tab_rects.iter().position(|r| r.contains(pos)) {
@@ -688,6 +700,21 @@ impl PrScreen {
             let area = ui::centered(f.area(), 34, lines.len() as u16 + 2);
             f.render_widget(Clear, area);
             f.render_widget(Paragraph::new(lines).block(ui::block("submit review", true)), area);
+        }
+        if self.clone_prompt {
+            let dir = ctx.clone_target(self.key.0);
+            let lines = vec![
+                Line::from(format!("this needs a local clone of {}", ctx.repo(self.key.0))),
+                Line::from(vec![
+                    " y ".cyan().bold(),
+                    format!("clone it into {}", dir.display()).into(),
+                ]),
+                Line::from(" any other key: cancel").dark_gray(),
+            ];
+            let w = lines.iter().map(Line::width).max().unwrap_or(0) as u16 + 4;
+            let area = ui::centered(f.area(), w, lines.len() as u16 + 2);
+            f.render_widget(Clear, area);
+            f.render_widget(Paragraph::new(lines).block(ui::block("clone", true)), area);
         }
         if let Some((picker, _)) = &mut self.picker {
             picker.render(f);

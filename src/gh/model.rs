@@ -85,8 +85,6 @@ pub struct PrSummary {
     pub updated_at: String,
     pub head_ref_name: String,
     pub review_decision: Option<String>,
-    pub additions: u64,
-    pub deletions: u64,
     pub author: Option<Actor>,
     pub assignees: Nodes<Actor>,
     pub review_requests: Nodes<ReviewRequest>,
@@ -114,30 +112,39 @@ impl PrSummary {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct RepoPrs {
-    pub total_count: u64,
-    pub nodes: Vec<PrSummary>,
-    /// Login of the authenticated user (fetched alongside).
-    #[serde(skip)]
-    pub viewer: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct IssueSummary {
     pub number: u64,
     pub title: String,
-    pub state: String,
     pub updated_at: String,
     pub author: Option<Actor>,
+    pub assignees: Nodes<Actor>,
     pub labels: Nodes<Label>,
-    pub comments: Count,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Count {
-    pub total_count: u64,
+pub enum Item {
+    Pr(PrSummary),
+    Issue(IssueSummary),
+}
+
+impl Item {
+    pub fn number(&self) -> u64 {
+        match self {
+            Item::Pr(p) => p.number,
+            Item::Issue(i) => i.number,
+        }
+    }
+    pub fn updated_at(&self) -> &str {
+        match self {
+            Item::Pr(p) => &p.updated_at,
+            Item::Issue(i) => &i.updated_at,
+        }
+    }
+}
+
+/// Search results: (owner/name, item), most recently updated first.
+pub struct Activity {
+    pub viewer: String,
+    pub items: Vec<(String, Item)>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

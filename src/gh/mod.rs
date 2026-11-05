@@ -78,36 +78,96 @@ fn rest_paginated<T: DeserializeOwned>(path: &str) -> Result<Vec<T>> {
     Ok(pages.into_iter().flatten().collect())
 }
 
-const PR_FIELDS: &str = r#"
+const FIELDS: &str = r#"
 fragment PrFields on PullRequest {
-  number title isDraft updatedAt headRefName reviewDecision additions deletions
+  number title isDraft updatedAt headRefName reviewDecision
+  repository { nameWithOwner }
   author { login }
   assignees(first: 10) { nodes { login } }
   reviewRequests(first: 20) { nodes { requestedReviewer {
     ... on User { login } ... on Team { login: slug } ... on Bot { login } } } }
   commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
+}
+fragment IssueFields on Issue {
+  number title updatedAt repository { nameWithOwner } author { login }
+  assignees(first: 10) { nodes { login } } labels(first: 5) { nodes { name } }
 }"#;
 
-/// The most recently updated open PRs of a repo.
-// shortcut: first 30 only (GitHub gets slow and 502s on bigger pages), add paging if a repo needs more.
-pub fn repo_prs(owner: &str, name: &str) -> Result<RepoPrs> {
-    let q = format!(
-        "query($owner: String!, $name: String!) {{ viewer {{ login }} repository(owner: $owner, name: $name) {{
-          pullRequests(states: OPEN, first: 30, orderBy: {{field: UPDATED_AT, direction: DESC}}) {{
-            totalCount nodes {{ ...PrFields }} }} }} }}{PR_FIELDS}"
-    );
-    let mut data = graphql(&q, json!({ "owner": owner, "name": name }))?;
-    let mut prs: RepoPrs = decode(data["repository"]["pullRequests"].take())?;
-    prs.viewer = data["viewer"]["login"].as_str().unwrap_or_default().to_string();
-    Ok(prs)
+/// Open PRs and issues matching any of `scopes` (GitHub search qualifiers,
+/// e.g. `involves:@me` or `repo:a/b repo:c/d`), in one request.
+// shortcut: 50 PRs and 50 issues per scope, add paging if someone misses items.
+pub fn search(scopes: &[String]) -> Result<Activity> {
+    if scopes.is_empty() {
+        return Ok(Activity {
+            viewer: String::new(),
+            items: Vec::new(),
+        });
+    }
+    let (mut params, mut fields, mut vars) = (Vec::new(), String::new(), serde_json::Map::new());
+    for (i, scope) in scopes.iter().enumerate() {
+        for kind in ["pr", "issue"] {
+            params.push(format!("${kind}{i}: String!"));
+            fields += &format!(
+                " {kind}{i}: search(query: ${kind}{i}, type: ISSUE, first: 50) {{ nodes {{ __typename ...PrFields ...IssueFields }} }}"
+            );
+            vars.insert(
+                format!("{kind}{i}"),
+                format!("is:{kind} is:open archived:false sort:updated-desc {scope}").into(),
+            );
+        }
+    }
+    let q = format!("query({}) {{ viewer {{ login }}{fields} }}{FIELDS}", params.join(", "));
+    let mut data = graphql(&q, Value::Object(vars))?;
+    let viewer = data["viewer"]["login"].as_str().unwrap_or_default().to_string();
+    let mut items: Vec<(String, Item)> = Vec::new();
+    for (key, v) in data.as_object_mut().into_iter().flatten() {
+        if key == "viewer" {
+            continue;
+        }
+        for mut n in std::mem::take(&mut v["nodes"])
+            .as_array_mut()
+            .into_iter()
+            .flatten()
+            .map(std::mem::take)
+        {
+            let repo = n["repository"]["nameWithOwner"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string();
+            let item = match n["__typename"].as_str() {
+                Some("PullRequest") => Item::Pr(decode(n.take())?),
+                Some("Issue") => Item::Issue(decode(n.take())?),
+                _ => continue,
+            };
+            // Scopes overlap (a pinned repo you're involved in).
+            if !items.iter().any(|(r, i)| *r == repo && i.number() == item.number()) {
+                items.push((repo, item));
+            }
+        }
+    }
+    items.sort_by(|a, b| b.1.updated_at().cmp(a.1.updated_at()));
+    Ok(Activity { viewer, items })
 }
 
-/// `query` uses GitHub search syntax and is scoped to the repo.
-pub fn issues(repo: &str, query: &str) -> Result<Vec<IssueSummary>> {
-    const Q: &str = r#"query($q: String!) { search(query: $q, type: ISSUE, first: 50) { nodes { ... on Issue {
-      number title state updatedAt author { login } labels(first: 5) { nodes { name } } comments { totalCount } } } } }"#;
-    let mut data = graphql(Q, json!({ "q": format!("repo:{repo} is:issue {query}") }))?;
-    decode(data["search"]["nodes"].take())
+/// Logins of the organizations the viewer belongs to.
+pub fn orgs() -> Result<Vec<String>> {
+    let data = graphql(
+        "query { viewer { organizations(first: 100) { nodes { login } } } }",
+        json!({}),
+    )?;
+    let nodes = data["viewer"]["organizations"]["nodes"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    Ok(nodes
+        .iter()
+        .filter_map(|n| n["login"].as_str().map(String::from))
+        .collect())
+}
+
+/// Clones `repo` into `dir` (gh picks the protocol the user set up).
+pub fn clone(repo: &str, dir: &std::path::Path) -> Result<()> {
+    gh(&["repo", "clone", repo, &dir.to_string_lossy(), "--", "--quiet"], None).map(drop)
 }
 
 pub fn issue(owner: &str, name: &str, number: u64) -> Result<IssueDetail> {

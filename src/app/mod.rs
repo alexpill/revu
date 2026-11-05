@@ -26,17 +26,20 @@ use ratatui::layout::{Constraint, Layout, Position};
 use ratatui::style::Stylize;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Clear, Paragraph};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::time::Duration;
 
-/// (index of the repo in the config, PR or issue number)
+/// (index of the repo in `Ctx::sources`, PR or issue number)
 pub type Key = (usize, u64);
 
 pub enum Msg {
-    RepoPrs(usize, Result<RepoPrs>),
-    Issues(usize, Result<Vec<IssueSummary>>),
+    /// Search results for a view of the main screen.
+    Activity(usize, Result<Activity>),
+    /// A repo cloned by `Ctx::clone_repo`, with its path.
+    Cloned(usize, Result<PathBuf>),
     Issue(Key, Result<IssueDetail>),
     Pr(Key, Result<PrDetail>),
     Files(Key, Result<(Vec<ChangedFile>, std::collections::HashMap<String, bool>)>),
@@ -111,7 +114,10 @@ impl Screen {
 /// State shared with every screen.
 pub struct Ctx {
     pub cfg: Config,
+    /// Every repo seen so far; `Key`s index into it, so it only grows.
     pub sources: Vec<Source>,
+    /// Remembered local clones, by lowercased owner/name.
+    links: HashMap<String, PathBuf>,
     pub hl: Highlighter,
     pub viewer: String,
     tx: Sender<Msg>,
@@ -174,7 +180,53 @@ impl Ctx {
     }
 
     pub fn repo(&self, i: usize) -> &str {
-        &self.cfg.repos[i].name
+        &self.sources[i].repo
+    }
+
+    pub fn owner_name(&self, i: usize) -> (String, String) {
+        let (o, n) = self.sources[i].owner_name();
+        (o.to_string(), n.to_string())
+    }
+
+    /// The index of `repo` in `sources`, added (with its remembered clone) if new.
+    pub fn repo_index(&mut self, repo: &str) -> usize {
+        if let Some(i) = self.sources.iter().position(|s| s.repo.eq_ignore_ascii_case(repo)) {
+            return i;
+        }
+        let local = self.links.get(&repo.to_lowercase()).cloned();
+        self.sources.push(Source {
+            repo: repo.to_string(),
+            local,
+        });
+        self.sources.len() - 1
+    }
+
+    /// Pinned repos come first: configured ones, then the clone revu runs from.
+    pub fn pinned(&self, repo: &str) -> Option<usize> {
+        self.cfg.repos.iter().position(|r| r.name.eq_ignore_ascii_case(repo))
+    }
+
+    /// `clone_dir/name`: short paths, a fork and its parent would collide (reported, not overwritten).
+    pub fn clone_target(&self, i: usize) -> PathBuf {
+        self.cfg.clone_dir().join(self.owner_name(i).1)
+    }
+
+    pub fn clone_repo(&mut self, i: usize) {
+        if let Some(p) = &self.sources[i].local {
+            return self.info(format!("already cloned at {}", p.display()));
+        }
+        let (repo, dir) = (self.repo(i).to_string(), self.clone_target(i));
+        self.info(format!("cloning {repo} into {}…", dir.display()));
+        self.spawn(move || {
+            // An existing clone of the same repo there is just linked.
+            let same = config::local_repo(&dir).is_ok_and(|r| r.name.eq_ignore_ascii_case(&repo));
+            let res = match same {
+                true => Ok(()),
+                false if dir.exists() => Err(anyhow::anyhow!("{} already exists", dir.display())),
+                false => crate::gh::clone(&repo, &dir),
+            };
+            Msg::Cloned(i, res.map(|()| dir))
+        });
     }
 
     pub fn browse(&mut self, key: Key) {
@@ -201,18 +253,20 @@ impl App {
         let worker = mutation::spawn_worker(move |job: Job<Key>, res| {
             let _ = done_tx.send(Msg::Mutated(job.key, job.mutation, res));
         });
+        let links = config::links();
         let sources = cfg
             .repos
             .iter()
             .map(|r| Source {
                 repo: r.name.clone(),
-                local: r.path.clone(),
+                local: r.path.clone().or_else(|| links.get(&r.name.to_lowercase()).cloned()),
             })
             .collect();
         let hl = Highlighter::new(cfg.theme.as_deref());
         let mut ctx = Ctx {
             cfg,
             sources,
+            links,
             hl,
             viewer: String::new(),
             tx,
@@ -326,8 +380,23 @@ impl App {
             self.ctx.inflight = self.ctx.inflight.saturating_sub(1);
         }
         let msg = match msg {
-            Msg::RepoPrs(i, r) => return self.main.on_prs(i, r, &mut self.ctx),
-            Msg::Issues(i, r) => return self.main.on_issues(i, r, &mut self.ctx),
+            Msg::Activity(view, r) => return self.main.on_activity(view, r, &mut self.ctx),
+            Msg::Cloned(i, r) => {
+                match r {
+                    Ok(dir) => {
+                        let repo = self.ctx.repo(i).to_string();
+                        if let Err(e) = config::save_link(&repo, &dir) {
+                            self.ctx.error(e);
+                        } else {
+                            self.ctx.info(format!("cloned {repo} into {}", dir.display()));
+                        }
+                        self.ctx.links.insert(repo.to_lowercase(), dir.clone());
+                        self.ctx.sources[i].local = Some(dir);
+                    }
+                    Err(e) => self.ctx.error(format!("clone failed: {e}")),
+                }
+                return;
+            }
             Msg::Mutated(key, m, res) => {
                 match &res {
                     Ok(()) if m.needs_reload() => self.ctx.info("saved"),

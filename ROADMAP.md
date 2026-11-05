@@ -84,18 +84,20 @@ Make buffers and the diff feel like Neovim, still without editing:
 
 ## Dashboard and issues
 
-- [ ] **Review progress in the PR lists** (home and repo tabs): files viewed
+- [ ] **Review progress in the PR lists** (home tabs): files viewed
       out of the total (e.g. `12/40`, or a small bar), so you can tell at a
       glance what is left to review, plus your pending comments if any. The
       list query would need each PR's files and `viewerViewedState`, which
       makes an already slow GitHub query heavier: probably fetch it lazily
       (visible rows only, or a second request after the list shows).
 
-- [ ] More than 30 open PRs per repo (pagination / load more).
+- [ ] More than 50 PRs and 50 issues per view scope (pagination / load more).
 - [ ] Review requests made to a team you belong to.
 - [ ] Auto-refresh and notifications.
-- [ ] Create issues; open PRs and issues from outside the configured repos
+- [ ] Create issues; open any PR or issue by reference
       (e.g. `revu owner/repo#123`).
+- [ ] Search closed PRs and issues with GitHub syntax (`is:closed label:bug`),
+      which the per-repo issues tab did before the home became cross-repo.
 
 ## Platform
 
@@ -111,8 +113,9 @@ Make buffers and the diff feel like Neovim, still without editing:
 
 ## Known limitations
 
-- Only the 30 most recently updated open PRs per repo are loaded (larger
-  pages made GitHub's GraphQL API slow enough to return 502s).
+- Each view loads at most the 50 most recently updated open PRs and 50
+  issues per search scope (involving you, your account and orgs, pinned
+  repos).
 - "Review requested" only counts requests made to you directly.
 - `e` opens the local clone when no worktree exists yet; it may not be on the
   PR branch.
