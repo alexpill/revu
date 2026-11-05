@@ -99,6 +99,11 @@ Make buffers and the diff feel like Neovim, still without editing:
 
 ## Platform
 
+- [ ] **Command palette** (`Ctrl-k`, or `Ctrl-p`/`:` if those fit better):
+      one fuzzy prompt over the whole context (repos, PRs, issues, files of
+      the open PR, comments) and over actions (approve, submit review, open
+      in browser, check out, custom commands…), each action showing its key
+      so the palette also teaches the shortcuts. Builds on the `/` search.
 - [ ] Configurable key bindings.
 - [ ] Mouse support.
 - [ ] Remember UI state (last tab, filters) between runs.
