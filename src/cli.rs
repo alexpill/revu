@@ -16,6 +16,7 @@ servers.
 
 Options:
   -c, --config <FILE>    config file to use instead of the default
+      --pr <NUMBER>      open this PR of the clone revu runs from, alone
       --theme <NAME>     syntax theme (any bat theme, e.g. \"Nord\")
   -h, --help             show this help
   -V, --version          show the version
@@ -25,6 +26,7 @@ Options:
 pub struct Args {
     pub config: Option<PathBuf>,
     pub theme: Option<String>,
+    pub pr: Option<u64>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -54,6 +56,7 @@ pub fn parse(argv: impl IntoIterator<Item = String>) -> Result<Command> {
             "-V" | "--version" => return Ok(Command::Version),
             "-c" | "--config" => args.config = Some(PathBuf::from(value()?)),
             "--theme" => args.theme = Some(value()?),
+            "--pr" => args.pr = Some(value()?.parse().map_err(|_| anyhow!("--pr needs a PR number"))?),
             f => bail!("unknown argument {f} (see --help)"),
         }
     }
@@ -79,6 +82,11 @@ mod tests {
         assert!(run(&["-c=x"]).is_err());
         assert_eq!(run(&["--help"]).unwrap(), Command::Help);
         assert!(run(&["--theme"]).is_err());
+        let Command::Run(a) = run(&["--pr=12"]).unwrap() else {
+            panic!()
+        };
+        assert_eq!(a.pr, Some(12));
+        assert!(run(&["--pr", "x"]).is_err());
         assert!(run(&["--nope"]).is_err());
         assert!(run(&["."]).is_err());
     }

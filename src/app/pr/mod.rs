@@ -33,6 +33,7 @@ pub const HELP: &[(&str, &str)] = &[
     ("h/l w/b 0/$", "move in line"),
     ("v", "start / cancel range selection"),
     ("c", "comment line or range (pending review)"),
+    ("a", "line, range or thread: ask Claude Code (run from /revu)"),
     ("r / R", "on a thread: reply / resolve toggle"),
     ("D", "on a comment: delete it (pending or yours)"),
     ("z", "unfold generated file"),

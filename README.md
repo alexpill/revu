@@ -59,6 +59,7 @@ Rust toolchain; a binary cache is on the [roadmap](ROADMAP.md).
 ```sh
 revu                    # what involves you; run from a clone, that repo is pinned
 revu --theme Nord
+revu --pr 42            # just that PR of the clone you are in; q quits
 ```
 
 Run from a clone, `revu` pins its repo for that run and remembers where the
@@ -66,7 +67,22 @@ clone is (its main checkout, if you are in a linked worktree). For a fork,
 the `upstream` remote wins over `origin`.
 
 Options: `--config <FILE>` to use another config file, `--theme <NAME>` to
-override the theme, `--help`, `--version`.
+override the theme, `--pr <NUMBER>` to open one PR alone, `--help`, `--version`.
+
+### With Claude Code
+
+`contrib/claude-code` is a Claude Code plugin: `/revu` opens revu on the
+current branch's PR (or `/revu 42`) in a split beside Claude (herdr or tmux;
+elsewhere it copies the command to run). In the diff, `a` on a line, a `v`
+range or a thread opens the comment box, and what you write is sent to Claude
+(framed as the plugin's, since it quotes others' code and comments), with the file, lines, diff and thread attached.
+
+```sh
+claude --plugin-dir /path/to/revu/contrib/claude-code
+```
+
+Set the plugin's `command` option (in `/config`) if `revu` is not on your
+`PATH`, e.g. `nix run github:alexpill/revu --`.
 
 ## Configuration
 
@@ -145,6 +161,7 @@ Press `?` anywhere for the keys of the current screen.
 | `e` | open the current position in `$EDITOR` |
 | `S` | submit review: comment, approve, request changes, or discard |
 | `C` | comment on the PR |
+| `a` | line, range or thread: ask Claude Code (revu started by `/revu`) |
 
 Comments are written in a box: `Ctrl-s` sends, `Esc` cancels, `Ctrl-o` moves
 the text to `$VISUAL` / `$EDITOR` (quit with `:cq`, a non-zero exit, to cancel).

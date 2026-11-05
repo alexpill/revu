@@ -21,8 +21,12 @@ fn main() -> anyhow::Result<()> {
         cli::Command::Run(args) => args,
     };
     let cfg = config::load(&args)?;
+    let pr = match args.pr {
+        Some(n) => Some((config::local_repo(std::path::Path::new("."))?.name, n)),
+        None => None,
+    };
     let mut terminal = app::init_terminal();
-    let res = app::App::new(cfg).run(&mut terminal);
+    let res = app::App::new(cfg, pr).run(&mut terminal);
     app::restore_terminal();
     res
 }

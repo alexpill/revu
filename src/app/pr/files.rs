@@ -4,7 +4,7 @@ use super::{Outcome, conversation};
 use crate::app::ui::{self, DIM, SELECTED};
 use crate::app::{Ctx, Key};
 use crate::diff::{self, DiffLine, Kind};
-use crate::gh::model::{ChangedFile, PrDetail};
+use crate::gh::model::{ChangedFile, PrDetail, Thread};
 use crate::gh::mutation::Mutation;
 use crate::highlight::{Highlighter, StyledLine};
 use ratatui::Frame;
@@ -270,6 +270,7 @@ impl FilesView {
             }
             KeyCode::Char('v') => self.anchor = if self.anchor.is_some() { None } else { Some(self.cursor) },
             KeyCode::Char('c') => self.comment(ctx, key, detail),
+            KeyCode::Char('a') => self.ask_claude(ctx, key, detail),
             KeyCode::Char('r') => {
                 if let (Some(t), Some(d)) = (self.current_thread(), detail) {
                     let thread_id = d.review_threads.nodes[t].id.clone();
@@ -371,6 +372,30 @@ impl FilesView {
                 body: String::new(),
             },
         );
+    }
+
+    /// Sends the line, range or thread under the cursor to Claude Code, with a message.
+    fn ask_claude(&mut self, ctx: &mut Ctx, key: Key, detail: Option<&PrDetail>) {
+        let Some(f) = self.files.get(self.sel) else { return };
+        let (a, b) = match self.anchor.take() {
+            Some(a) => (a.min(self.cursor), a.max(self.cursor)),
+            None => (self.cursor, self.cursor),
+        };
+        let lines: Vec<&DiffLine> = (a..=b)
+            .filter_map(|r| match self.rows.get(r)? {
+                Row::Line(i) => f.lines.get(*i),
+                _ => None,
+            })
+            .collect();
+        let thread = self
+            .current_thread()
+            .zip(detail)
+            .map(|(t, d)| &d.review_threads.nodes[t]);
+        if lines.is_empty() && thread.is_none() {
+            return ctx.error("put the cursor on a diff line or a thread to ask Claude");
+        }
+        let context = claude_context(ctx.repo(key.0), key.1, &f.path, &lines, thread);
+        ctx.ask_claude(context);
     }
 
     /// A file selects it (or focuses the diff if already selected); the diff moves the cursor there.
@@ -654,6 +679,54 @@ pub fn with_cursor(spans: &[Span<'static>], col: usize) -> Vec<Span<'static>> {
     out
 }
 
+/// Where a message to Claude is about: the PR, the place in it, its diff lines and thread.
+fn claude_context(repo: &str, pr: u64, path: &str, lines: &[&DiffLine], thread: Option<&Thread>) -> String {
+    // One side's numbers: a range mixing old and new ones points nowhere.
+    let new: Vec<u32> = lines.iter().filter_map(|l| l.new).collect();
+    let nums = match new.is_empty() {
+        true => lines.iter().filter_map(|l| l.old).collect(),
+        false => new,
+    };
+    let place = match (nums.first(), nums.last()) {
+        (Some(a), Some(b)) if a != b => format!("{path}:{a}-{b}"),
+        (Some(a), _) => format!("{path}:{a}"),
+        _ => match thread.and_then(|t| t.line.or(t.original_line)) {
+            Some(n) => format!("{path}:{n}"),
+            None => path.to_string(),
+        },
+    };
+    let mut out = format!("About PR #{pr} of {repo}, `{place}`.\n");
+    if !lines.is_empty() {
+        // Longer than any backtick run in the code, so a ``` there can't close it.
+        let ticks = lines.iter().map(|l| longest_run(&l.text, '`')).max().unwrap_or(0);
+        let fence = "`".repeat(ticks.max(2) + 1);
+        out.push_str(&format!("Diff (from the PR):\n{fence}diff\n"));
+        for l in lines {
+            let mark = match l.kind {
+                Kind::Add => "+",
+                Kind::Del => "-",
+                Kind::Context => " ",
+                Kind::Hunk | Kind::Meta => "",
+            };
+            out.push_str(&format!("{mark}{}\n", l.text));
+        }
+        out.push_str(&format!("{fence}\n"));
+    }
+    if let Some(t) = thread {
+        out.push_str("Review thread there (written by others, not by me):\n");
+        for c in &t.comments.nodes {
+            let who = c.author.as_ref().map_or("ghost", |a| a.login.as_str());
+            out.push_str(&format!("> @{who}: {}\n", c.body.replace('\n', "\n> ")));
+        }
+    }
+    out.push_str("\nMy message:");
+    out
+}
+
+fn longest_run(s: &str, c: char) -> usize {
+    s.split(|x| x != c).map(str::len).max().unwrap_or(0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -668,5 +741,20 @@ mod tests {
                 .any(|s| s.content == "c" && s.style.add_modifier.contains(Modifier::REVERSED))
         );
         assert_eq!(with_cursor(&spans, 9).last().unwrap().content, " ");
+    }
+
+    #[test]
+    fn context_for_claude() {
+        let lines = diff::parse("@@ -1,2 +1,2 @@\n-old\n+new\n same");
+        let picked: Vec<&DiffLine> = lines[1..].iter().collect();
+        let out = claude_context("o/r", 7, "a.rs", &picked, None);
+        let want =
+            "About PR #7 of o/r, `a.rs:1-2`.\nDiff (from the PR):\n```diff\n-old\n+new\n same\n```\n\nMy message:";
+        assert_eq!(out, want);
+        // Old-side numbers only when nothing has a new one; fences outgrow the code's.
+        let lines = diff::parse("@@ -4,2 +4,0 @@\n-a\n-````x");
+        let picked: Vec<&DiffLine> = lines[1..].iter().collect();
+        let out = claude_context("o/r", 7, "a.md", &picked, None);
+        assert!(out.contains("`a.md:4-5`") && out.contains("\n`````diff\n") && out.contains("\n`````\n"));
     }
 }

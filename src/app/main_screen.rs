@@ -170,7 +170,14 @@ pub struct MainScreen {
 
 impl MainScreen {
     pub fn new(ctx: &mut Ctx) -> Self {
-        let mut s = Self {
+        let mut s = Self::empty();
+        s.load(ctx);
+        s
+    }
+
+    /// Unloaded: nothing is searched until `load` (for `--pr`, never).
+    pub fn empty() -> Self {
+        Self {
             tab: 0,
             view: View::Me,
             data: [None, None, None],
@@ -181,9 +188,7 @@ impl MainScreen {
             input: None,
             tab_rects: Vec::new(),
             table_area: Rect::default(),
-        };
-        s.load(ctx);
-        s
+        }
     }
 
     fn load(&mut self, ctx: &mut Ctx) {

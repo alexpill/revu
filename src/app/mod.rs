@@ -56,22 +56,27 @@ pub enum Msg {
 
 /// Something that needs the terminal, run between frames.
 pub enum External {
-    /// Finish a comment in $EDITOR, then queue `mutation` with it as body.
-    Compose {
-        key: Key,
-        pr_id: String,
-        mutation: Mutation,
-        text: String,
-    },
+    /// Finish a draft in $EDITOR, then send it.
+    Compose { to: To, text: String },
     /// Open a file at a 1-based line in $EDITOR.
     Open { path: PathBuf, line: u32 },
 }
 
-/// A comment being written in the compose box, sent as `mutation`'s body.
+/// Where a draft goes once written.
+pub enum To {
+    /// GitHub: `mutation`, with the text as its body.
+    GitHub {
+        key: Key,
+        pr_id: String,
+        mutation: Mutation,
+    },
+    /// Claude Code, through the inbox file: the text after `context`.
+    Claude { context: String },
+}
+
+/// A comment or message being written in the compose box.
 pub struct Draft {
-    key: Key,
-    pr_id: String,
-    mutation: Mutation,
+    to: To,
     text: TextArea<'static>,
 }
 
@@ -163,28 +168,47 @@ impl Ctx {
     }
 
     pub fn compose(&mut self, key: Key, pr_id: &str, mutation: Mutation) {
-        let mut text = TextArea::default();
-        text.set_wrap_mode(WrapMode::WordOrGlyph);
-        text.set_cursor_line_style(ratatui::style::Style::new());
-        self.draft = Some(Draft {
+        self.draft_to(To::GitHub {
             key,
             pr_id: pr_id.to_string(),
             mutation,
-            text,
         });
     }
 
-    /// Queues the comment; an empty one is dropped, except a review submit.
-    fn send(&mut self, key: Key, pr_id: &str, mutation: Mutation, body: String) {
-        if body.is_empty() && !matches!(mutation, Mutation::Submit { .. }) {
-            return self.info("empty comment, cancelled");
+    fn draft_to(&mut self, to: To) {
+        let mut text = TextArea::default();
+        text.set_wrap_mode(WrapMode::WordOrGlyph);
+        text.set_cursor_line_style(ratatui::style::Style::new());
+        self.draft = Some(Draft { to, text });
+    }
+
+    /// Queues the comment or message; an empty one is dropped, except a review submit.
+    fn send(&mut self, to: To, body: String) {
+        match to {
+            To::GitHub { mutation, .. } if body.is_empty() && !matches!(mutation, Mutation::Submit { .. }) => {
+                self.info("empty comment, cancelled")
+            }
+            To::GitHub { key, pr_id, mutation } => {
+                self.mutate(key, &pr_id, mutation.with_body(body));
+                self.info("sending…");
+            }
+            To::Claude { .. } if body.is_empty() => self.info("empty message, cancelled"),
+            To::Claude { context } => match send_to_claude(&format!("{context}\n{body}")) {
+                Ok(()) => self.info("sent to Claude"),
+                Err(e) => self.error(format!("sending to Claude failed: {e}")),
+            },
         }
-        self.mutate(key, pr_id, mutation.with_body(body));
-        self.info("sending…");
     }
 
     pub fn open_in_editor(&mut self, path: PathBuf, line: u32) {
         self.external = Some(External::Open { path, line });
+    }
+
+    pub fn ask_claude(&mut self, context: String) {
+        if std::env::var_os(CLAUDE_INBOX).is_none() {
+            return self.error("start revu from Claude Code (/revu) to send it messages");
+        }
+        self.draft_to(To::Claude { context });
     }
 
     pub fn sender(&self) -> Sender<Msg> {
@@ -268,10 +292,16 @@ pub struct App {
     stack: Vec<Screen>,
     help: bool,
     quit: bool,
+    /// Opened on one PR (`--pr`): leaving it quits.
+    single: bool,
 }
 
+/// File the Claude Code mod set for us: one JSON line `{"text": ...}` per message.
+const CLAUDE_INBOX: &str = "REVU_CLAUDE_INBOX";
+
 impl App {
-    pub fn new(cfg: Config) -> Self {
+    /// `pr`: (owner/name, number) to open alone instead of the home screen.
+    pub fn new(cfg: Config, pr: Option<(String, u64)>) -> Self {
         let (tx, rx) = channel();
         let done_tx = tx.clone();
         let worker = mutation::spawn_worker(move |job: Job<Key>, res| {
@@ -301,14 +331,27 @@ impl App {
             draft: None,
             submitting: Vec::new(),
         };
-        let main = main_screen::MainScreen::new(&mut ctx);
+        let single = pr.is_some();
+        // With --pr the home screen is never shown: skip its search.
+        let main = match single {
+            true => main_screen::MainScreen::empty(),
+            false => main_screen::MainScreen::new(&mut ctx),
+        };
+        let stack = pr
+            .map(|(repo, n)| {
+                let key = (ctx.repo_index(&repo), n);
+                Screen::Pr(Box::new(pr::PrScreen::open(key, &mut ctx)))
+            })
+            .into_iter()
+            .collect();
         Self {
             ctx,
             rx,
             main,
-            stack: Vec::new(),
+            stack,
             help: false,
             quit: false,
+            single,
         }
     }
 
@@ -387,15 +430,13 @@ impl App {
             KeyCode::Char('s') if ctrl => {
                 let d = self.ctx.draft.take().unwrap();
                 let body = d.text.lines().join("\n").trim().to_string();
-                self.ctx.send(d.key, &d.pr_id, d.mutation, body);
+                self.ctx.send(d.to, body);
             }
             KeyCode::Char('o') if ctrl => {
                 let d = self.ctx.draft.take().unwrap();
                 self.ctx.external = Some(External::Compose {
                     text: d.text.lines().join("\n"),
-                    key: d.key,
-                    pr_id: d.pr_id,
-                    mutation: d.mutation,
+                    to: d.to,
                 });
             }
             _ => {
@@ -425,7 +466,7 @@ impl App {
             Action::None => {}
             Action::Push(s) => self.stack.push(s),
             Action::Pop => {
-                if self.stack.pop().is_none() {
+                if self.stack.pop().is_none() || (self.single && self.stack.is_empty()) {
                     self.quit = true;
                 }
             }
@@ -477,15 +518,10 @@ impl App {
 
     fn run_external(&mut self, ext: External, _terminal: &mut DefaultTerminal) {
         match ext {
-            External::Compose {
-                key,
-                pr_id,
-                mutation,
-                text,
-            } => {
+            External::Compose { to, text } => {
                 let file = config::cache_dir().join("COMMENT.md");
                 match compose(&file, &text) {
-                    Ok(body) => self.ctx.send(key, &pr_id, mutation, body),
+                    Ok(body) => self.ctx.send(to, body),
                     Err(e) => self.ctx.info(format!("cancelled ({e})")),
                 }
             }
@@ -524,8 +560,11 @@ impl App {
         if let Some(d) = &mut self.ctx.draft {
             let area = ui::centered(f.area(), 90, 16);
             d.text.set_block(
-                ui::block(draft_title(&d.mutation), true)
-                    .title_bottom(Line::from(" Ctrl-s send · Esc cancel · Ctrl-o $EDITOR ").dark_gray().right_aligned()),
+                ui::block(draft_title(&d.to), true).title_bottom(
+                    Line::from(" Ctrl-s send · Esc cancel · Ctrl-o $EDITOR ")
+                        .dark_gray()
+                        .right_aligned(),
+                ),
             );
             f.render_widget(Clear, area);
             f.render_widget(&d.text, area);
@@ -575,8 +614,12 @@ pub fn editor(args: &[&str]) -> Command {
     cmd
 }
 
-fn draft_title(m: &Mutation) -> String {
-    match m {
+fn draft_title(to: &To) -> String {
+    let mutation = match to {
+        To::GitHub { mutation, .. } => mutation,
+        To::Claude { context } => return format!("to Claude: {}", context.lines().next().unwrap_or_default()),
+    };
+    match mutation {
         Mutation::AddThread {
             path, line, start_line, ..
         } => match start_line {
@@ -587,6 +630,18 @@ fn draft_title(m: &Mutation) -> String {
         Mutation::Submit { event, .. } => format!("review: {}", event.to_lowercase().replace('_', " ")),
         _ => "comment".into(),
     }
+}
+
+fn send_to_claude(text: &str) -> Result<()> {
+    use std::io::Write;
+    let path = std::env::var_os(CLAUDE_INBOX).ok_or_else(|| anyhow::anyhow!("{CLAUDE_INBOX} is not set"))?;
+    let line = serde_json::json!({ "text": text }).to_string();
+    if let Some(dir) = std::path::Path::new(&path).parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    let mut f = std::fs::OpenOptions::new().create(true).append(true).open(path)?;
+    // One write per message, so the reader never sees half a line.
+    Ok(f.write_all(format!("{line}\n").as_bytes())?)
 }
 
 /// Lets the user write a comment; errors when the editor exits non-zero (`:cq`).

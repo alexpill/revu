@@ -15,6 +15,8 @@ the current version are listed at the end.
       `nixConfig`) so `nix run` downloads the binary instead of a Rust
       toolchain and a build.
 - [ ] **Screenshots / demo GIF** in the README.
+- [x] **Claude Code**: `/revu` opens the branch's PR beside Claude, `a`
+      sends a line, range or thread to it (`contrib/claude-code`).
 - [ ] **AI actions**: send the current hunk, file or whole PR to an AI CLI
       (e.g. `claude -p`) to explain it or pre-review it, and show the answer in
       a panel or as draft comments. Natural hook: a new `External` variant that
