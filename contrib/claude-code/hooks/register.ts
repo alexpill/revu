@@ -85,6 +85,12 @@ export const register: Register = (on, options) => {
     }
     if (!/^\d+$/.test(pr)) return { text: `Not a PR number: ${pr}` }
 
+    const bin = command.trim().split(/\s+/)[0] ?? ''
+    const found = await $.process.run(['sh', '-c', 'command -v "$1"', 'sh', bin])
+    if (found.exitCode !== 0) {
+      return { text: `revu not found: \`${bin}\` is not installed. Install revu (https://github.com/alexpill/revu#install) or set the plugin's command option.` }
+    }
+
     await $.fs.write(inbox, '')
     // A failed start keeps the pane open on its error.
     const shell = `${command} --pr ${pr} || { echo; echo "revu failed, press Enter to close"; read _; }`

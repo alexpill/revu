@@ -83,12 +83,15 @@ Install it from a Claude Code prompt (`y` to add the marketplace, then a scope):
 /plugin install revu --marketplace alexpill/revu
 ```
 
-or from a shell, setting how to start revu if it is not on your `PATH`:
+or from a shell:
 
 ```sh
 claude plugin marketplace add alexpill/revu
-claude plugin install revu@revu --config command="nix run github:alexpill/revu --"
+claude plugin install revu@revu
 ```
+
+The plugin does not install revu itself: [install](#install) it first. It runs
+`revu` from your `PATH`; `--config command=...` sets another way to start it.
 
 While working on the plugin, `claude --plugin-dir contrib/claude-code` runs it
 from the checkout.

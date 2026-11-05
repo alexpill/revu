@@ -9,7 +9,7 @@
     "command": {
       "type": "string",
       "title": "revu command",
-      "description": "How to start revu, e.g. `revu` or `nix run github:alexpill/revu --`",
+      "description": "How to start revu. The plugin does not install revu: install it first (https://github.com/alexpill/revu#install), then keep `revu` or give its full path",
       "default": "revu"
     }
   }

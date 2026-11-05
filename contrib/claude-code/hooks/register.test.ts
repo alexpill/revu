@@ -45,8 +45,24 @@ test('/revu opens the branch PR in a herdr split and relays revu messages', asyn
   expect(text).toBe('revu opened in a herdr split.')
   const inbox = '/home/me/.cache/revu/claude/S1.jsonl'
   expect(written).toEqual([inbox])
-  expect(runs[1]?.slice(0, 3)).toEqual(['herdr', 'pane', 'split'])
-  expect(runs[1]).toContain(`REVU_CLAUDE_INBOX=${inbox}`)
-  expect(runs[2]?.slice(0, 4)).toEqual(['herdr', 'pane', 'run', 'w:p2'])
-  expect(runs[2]?.[4]).toContain('revu --pr 42')
+  expect(runs[1]).toEqual(['sh', '-c', 'command -v "$1"', 'sh', 'revu'])
+  expect(runs[2]?.slice(0, 3)).toEqual(['herdr', 'pane', 'split'])
+  expect(runs[2]).toContain(`REVU_CLAUDE_INBOX=${inbox}`)
+  expect(runs[3]?.slice(0, 4)).toEqual(['herdr', 'pane', 'run', 'w:p2'])
+  expect(runs[3]?.[4]).toContain('revu --pr 42')
+})
+
+test('/revu says so and opens nothing when revu is not installed', async ($, on) => {
+  mock.env(on, { HOME: '/home/me', HERDR_PANE_ID: 'w:p1' })
+  on('session.cwd', () => ({ value: '/repo' }))
+  const runs: string[][] = []
+  on('process.run', (_$, e) => {
+    runs.push([...e.argv])
+    return { value: { exitCode: e.argv[0] === 'sh' ? 1 : 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+  })
+  on('fs.write', () => ({ value: undefined }))
+
+  const { text } = await $.command.run({ command: 'revu', args: '7' } as Parameters<typeof $.command.run>[0])
+  expect(text).toContain('`revu` is not installed')
+  expect(runs.map(r => r[0])).toEqual(['sh'])
 })
