@@ -439,7 +439,11 @@ impl PrScreen {
 
     pub fn on_msg(&mut self, msg: Msg, ctx: &mut Ctx) -> Option<Msg> {
         match msg {
-            Msg::Pr(key, r) if key == self.key => self.detail = Some(r.map_err(|e| e.to_string())),
+            Msg::Pr(key, r) if key == self.key => {
+                // shortcut: a reload already in flight when S was pressed clears this early; fine, the next one is right.
+                ctx.submitting.retain(|k| *k != key);
+                self.detail = Some(r.map_err(|e| e.to_string()));
+            }
             Msg::Files(key, r) if key == self.key => match (r, &mut self.files) {
                 (Ok((files, viewed)), Some(Ok(view))) => view.replace(files::entries(files, &viewed)),
                 (Ok((files, viewed)), slot) => *slot = Some(Ok(FilesView::new(files::entries(files, &viewed)))),
@@ -616,7 +620,9 @@ impl PrScreen {
             format!(" {repo} #{} ", d.number).dark_gray(),
             d.title.clone().bold(),
         ];
-        if pending > 0 {
+        if ctx.submitting.contains(&self.key) {
+            title.push("  submitting review…".yellow());
+        } else if pending > 0 {
             title.push(format!("  {pending} pending comment(s), S to submit").yellow());
         }
         f.render_widget(Paragraph::new(Line::from(title)), head);

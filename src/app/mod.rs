@@ -110,6 +110,8 @@ pub struct Ctx {
     inflight: usize,
     status: Option<(String, bool)>,
     external: Option<External>,
+    /// PRs whose review submit/discard is sent but not yet reloaded.
+    pub submitting: Vec<Key>,
 }
 
 impl Ctx {
@@ -123,6 +125,9 @@ impl Ctx {
 
     pub fn mutate(&mut self, key: Key, pr_id: &str, mutation: Mutation) {
         self.inflight += 1;
+        if matches!(mutation, Mutation::Submit { .. } | Mutation::DiscardReview) {
+            self.submitting.push(key);
+        }
         let _ = self.worker.send(Job {
             key,
             pr_id: pr_id.to_string(),
@@ -205,6 +210,7 @@ impl App {
             inflight: 0,
             status: None,
             external: None,
+            submitting: Vec::new(),
         };
         let main = main_screen::MainScreen::new(&mut ctx);
         Self {
