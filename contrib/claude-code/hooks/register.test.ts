@@ -15,6 +15,7 @@ test('/revu opens the branch PR in a herdr split and relays revu messages', asyn
     const out = (stdout: string) => ({ value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } })
     if (e.argv[0] === 'gh') return out('42\n')
     if (e.argv[2] === 'split') return out('{"result":{"pane":{"pane_id":"w:p2"}}}')
+    if (e.argv[0] === 'sh') return out('/nix/store/x/bin/revu\n')
     return out('')
   })
   on('process.spawn', async function* () {
@@ -49,7 +50,7 @@ test('/revu opens the branch PR in a herdr split and relays revu messages', asyn
   expect(runs[2]?.slice(0, 3)).toEqual(['herdr', 'pane', 'split'])
   expect(runs[2]).toContain(`REVU_CLAUDE_INBOX=${inbox}`)
   expect(runs[3]?.slice(0, 4)).toEqual(['herdr', 'pane', 'run', 'w:p2'])
-  expect(runs[3]?.[4]).toContain('revu --pr 42')
+  expect(runs[3]?.[4]).toContain(`/nix/store/x/bin/revu'\\'' --pr 42`)
 })
 
 test('/revu says so and opens nothing when revu is not installed', async ($, on) => {

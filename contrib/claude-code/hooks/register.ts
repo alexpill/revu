@@ -86,6 +86,7 @@ export const register: Register = (on, options) => {
     if (!/^\d+$/.test(pr)) return { text: `Not a PR number: ${pr}` }
 
     const bin = command.trim().split(/\s+/)[0] ?? ''
+    // Resolved here: a herdr split starts from herdr's PATH, not this one (e.g. a `nix shell`).
     const found = await $.process.run(['sh', '-c', 'command -v "$1"', 'sh', bin])
     if (found.exitCode !== 0) {
       return { text: `revu not found: \`${bin}\` is not installed. Install revu (https://github.com/alexpill/revu#install) or set the plugin's command option.` }
@@ -93,7 +94,8 @@ export const register: Register = (on, options) => {
 
     await $.fs.write(inbox, '')
     // A failed start keeps the pane open on its error.
-    const shell = `${command} --pr ${pr} || { echo; echo "revu failed, press Enter to close"; read _; }`
+    const exe = `${quote(found.stdout.trim())}${command.trim().slice(bin.length)}`
+    const shell = `${exe} --pr ${pr} || { echo; echo "revu failed, press Enter to close"; read _; }`
     try {
       return { text: await openBeside($, shell, cwd, inbox) }
     } catch (err) {
