@@ -26,6 +26,8 @@ pub const HELP: &[(&str, &str)] = &[
     ("1-9 H/L", "tabs: conversation, files, open buffers"),
     ("j/k Ctrl-d/u g/G", "scroll / move"),
     ("Tab", "files: switch list / diff"),
+    ("Ctrl-e", "files: hide / show the list"),
+    ("Alt-z", "diff: wrap long lines (else they scroll sideways)"),
     ("click / wheel", "tab, file, cursor / scroll"),
     ("[ ]", "previous / next file"),
     ("{ }", "previous / next hunk"),
@@ -580,7 +582,7 @@ impl PrScreen {
                 self.load_files(ctx);
             }
             KeyCode::Char('o') => ctx.browse(self.key),
-            KeyCode::Char('e') => self.edit_here(ctx),
+            KeyCode::Char('e') if !ctrl => self.edit_here(ctx),
             KeyCode::Char(c @ '1'..='9') => {
                 let t = c as usize - '1' as usize;
                 if t < tabs {

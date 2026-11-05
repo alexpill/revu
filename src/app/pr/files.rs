@@ -75,7 +75,8 @@ pub fn entries(files: Vec<ChangedFile>, viewed: &HashMap<String, bool>) -> Vec<F
 }
 
 pub enum Row {
-    Line(usize),
+    /// Diff line `.0`, segment `.1` of it when wrapped (0 otherwise).
+    Line(usize, usize),
     /// A rendered line of review thread `.0` (index in `review_threads`),
     /// showing its comment `.1` (`None` on the header).
     Thread(usize, Option<usize>, Line<'static>),
@@ -89,6 +90,12 @@ pub struct FilesView {
     cursor: usize,
     pub col: usize,
     scroll: usize,
+    /// First code column shown when lines aren't wrapped.
+    hscroll: usize,
+    wrap: bool,
+    hide_list: bool,
+    /// Columns left for code after the gutter, as last rendered.
+    code_w: usize,
     /// Start row of a visual (range) selection.
     anchor: Option<usize>,
     pending_g: bool,
@@ -111,6 +118,10 @@ impl FilesView {
             cursor: 0,
             col: 0,
             scroll: 0,
+            hscroll: 0,
+            wrap: false,
+            hide_list: false,
+            code_w: 80,
             anchor: None,
             pending_g: false,
             confirm_delete: None,
@@ -153,13 +164,20 @@ impl FilesView {
         self.sel = i.min(self.files.len().saturating_sub(1));
         self.cursor = 0;
         self.scroll = 0;
+        self.hscroll = 0;
         self.col = 0;
         self.anchor = None;
+        self.rows.clear(); // they are the previous file's
+    }
+
+    /// Width of a wrapped segment: a line is one segment when not wrapping.
+    fn seg_w(&self) -> usize {
+        if self.wrap { self.code_w } else { usize::MAX }
     }
 
     fn current_line(&self) -> Option<&DiffLine> {
         match self.rows.get(self.cursor)? {
-            Row::Line(i) => self.files.get(self.sel)?.lines.get(*i),
+            Row::Line(i, _) => self.files.get(self.sel)?.lines.get(*i),
             _ => None,
         }
     }
@@ -184,7 +202,7 @@ impl FilesView {
 
     fn jump_hunk(&mut self, forward: bool) {
         let Some(f) = self.files.get(self.sel) else { return };
-        let is_hunk = |r: &Row| matches!(r, Row::Line(i) if f.lines[*i].kind == Kind::Hunk);
+        let is_hunk = |r: &Row| matches!(r, Row::Line(i, 0) if f.lines[*i].kind == Kind::Hunk);
         let found = if forward {
             (self.cursor + 1..self.rows.len()).find(|&r| is_hunk(&self.rows[r]))
         } else {
@@ -227,8 +245,39 @@ impl FilesView {
                 _ => Outcome::Handled,
             };
         }
+        let before = self.cursor;
+        let outcome = self.on_motion_key(k, ctx, key, detail, ctrl);
+        // Moved to another row: keep the column on screen, like vim's gj/gk on wrapped lines.
+        if self.cursor != before
+            && let Some(Row::Line(_, s)) = self.rows.get(self.cursor)
+        {
+            let w = self.seg_w();
+            self.col = s * w + self.col % w;
+        }
+        outcome
+    }
+
+    fn on_motion_key(
+        &mut self,
+        k: KeyEvent,
+        ctx: &mut Ctx,
+        key: Key,
+        detail: Option<&PrDetail>,
+        ctrl: bool,
+    ) -> Outcome {
+        let alt = k.modifiers.contains(KeyModifiers::ALT);
         match k.code {
-            KeyCode::Tab => self.focus_diff = !self.focus_diff,
+            KeyCode::Char('e') if ctrl => {
+                self.hide_list = !self.hide_list;
+                self.focus_diff = true;
+            }
+            KeyCode::Char('z') if alt => {
+                self.wrap = !self.wrap;
+                self.hscroll = 0;
+                self.anchor = None; // its row moves
+            }
+            // With the list hidden, focus stays on the diff.
+            KeyCode::Tab => self.focus_diff = !self.focus_diff || self.hide_list,
             KeyCode::Char(']') => self.select(self.sel + 1),
             KeyCode::Char('[') => self.select(self.sel.saturating_sub(1)),
             KeyCode::Char(' ') => self.toggle_viewed(ctx, key, detail),
@@ -246,7 +295,7 @@ impl FilesView {
                 _ => return Outcome::Unhandled,
             },
             KeyCode::Esc if self.anchor.is_some() => self.anchor = None,
-            KeyCode::Esc => self.focus_diff = false,
+            KeyCode::Esc if !self.hide_list => self.focus_diff = false,
             KeyCode::Char('j') | KeyCode::Down => self.move_cursor(1),
             KeyCode::Char('k') | KeyCode::Up => self.move_cursor(-1),
             KeyCode::Char('d') if ctrl => self.move_cursor(self.height as isize / 2),
@@ -348,7 +397,7 @@ impl FilesView {
     fn comment(&mut self, ctx: &mut Ctx, key: Key, detail: Option<&PrDetail>) {
         let Some(d) = detail else { return };
         let anchor_of = |row: usize, me: &Self| match me.rows.get(row) {
-            Some(Row::Line(i)) => me.files[me.sel].lines[*i].anchor(),
+            Some(Row::Line(i, _)) => me.files[me.sel].lines[*i].anchor(),
             _ => None,
         };
         let Some((side, line)) = anchor_of(self.cursor, self) else {
@@ -381,12 +430,14 @@ impl FilesView {
             Some(a) => (a.min(self.cursor), a.max(self.cursor)),
             None => (self.cursor, self.cursor),
         };
-        let lines: Vec<&DiffLine> = (a..=b)
+        let mut picked: Vec<usize> = (a..=b)
             .filter_map(|r| match self.rows.get(r)? {
-                Row::Line(i) => f.lines.get(*i),
+                Row::Line(i, _) => Some(*i),
                 _ => None,
             })
             .collect();
+        picked.dedup(); // a wrapped line has several rows
+        let lines: Vec<&DiffLine> = picked.iter().filter_map(|&i| f.lines.get(i)).collect();
         let thread = self
             .current_thread()
             .zip(detail)
@@ -410,12 +461,21 @@ impl FilesView {
         } else if let Some(r) = ui::row_at(self.diff_area, self.scroll, pos).filter(|&r| r < self.rows.len()) {
             self.focus_diff = true;
             self.cursor = r;
+            let seg = match self.rows[r] {
+                Row::Line(_, s) => s,
+                _ => 0,
+            };
             let x = (pos.x - self.diff_area.x) as usize;
-            self.col = x.saturating_sub(GUTTER).min(self.line_chars().len().saturating_sub(1));
+            let col = x.saturating_sub(GUTTER) + seg * self.code_w + self.hscroll;
+            self.col = col.min(self.line_chars().len().saturating_sub(1));
         }
     }
 
     pub fn render(&mut self, f: &mut Frame, area: Rect, detail: Option<&PrDetail>, hl: &Highlighter) {
+        if self.hide_list {
+            self.list_area = Rect::default();
+            return self.render_diff(f, area, detail, hl);
+        }
         let list_w = (area.width / 3).clamp(24, 56);
         let [list_area, diff_area] = Layout::horizontal([Constraint::Length(list_w), Constraint::Fill(1)]).areas(area);
         self.render_list(f, list_area, detail);
@@ -506,7 +566,14 @@ impl FilesView {
             }
         }
         for (i, l) in file.lines.iter().enumerate() {
-            rows.push(Row::Line(i));
+            let segs = l
+                .text
+                .replace('\t', "    ")
+                .chars()
+                .count()
+                .div_ceil(self.seg_w())
+                .max(1);
+            rows.extend((0..segs).map(|s| Row::Line(i, s)));
             if let Some(ts) = l.anchor().and_then(|a| anchored.get(&a)) {
                 for &t in ts {
                     thread_rows(t, &detail.unwrap().review_threads.nodes[t], &mut rows);
@@ -550,9 +617,32 @@ impl FilesView {
         f.render_widget(block, area);
 
         self.diff_area = inner;
+        self.code_w = (inner.width as usize).saturating_sub(GUTTER).max(1);
+        let on_line = match self.rows.get(self.cursor) {
+            Some(Row::Line(i, _)) => Some(*i),
+            _ => None,
+        };
         self.rows = self.build_rows(detail, hl, inner.width as usize);
         self.height = inner.height as usize;
+        // Rows move when wrapping is toggled or the width changes: stay on the
+        // same line, on the segment holding the column.
+        let seg = self.col / self.seg_w();
+        if let Some(r) = on_line.and_then(|i| {
+            self.rows
+                .iter()
+                .rposition(|r| matches!(r, Row::Line(j, s) if *j == i && *s <= seg))
+        }) {
+            self.cursor = r;
+        }
         self.cursor = self.cursor.min(self.rows.len().saturating_sub(1));
+        if !self.wrap && self.current_line().is_some() {
+            let col = self.col.min(self.line_chars().len());
+            if col < self.hscroll {
+                self.hscroll = col;
+            } else if col >= self.hscroll + self.code_w {
+                self.hscroll = col + 1 - self.code_w;
+            }
+        }
         if self.cursor < self.scroll {
             self.scroll = self.cursor;
         } else if self.cursor >= self.scroll + self.height {
@@ -570,7 +660,11 @@ impl FilesView {
             .map(|(r, row)| {
                 let is_cursor = self.focus_diff && r == self.cursor;
                 let mut line = match row {
-                    Row::Line(i) => diff_line(&file.lines[*i], &styled[*i], is_cursor.then_some(self.col)),
+                    Row::Line(i, s) => {
+                        let start = s * self.code_w + self.hscroll;
+                        let cursor = is_cursor.then(|| self.col.saturating_sub(start));
+                        diff_line(&file.lines[*i], &styled[*i], cursor, *s == 0, start, self.code_w)
+                    }
                     Row::Thread(_, _, l) => {
                         let mut spans = vec![Span::raw(" ".repeat(GUTTER)), "│ ".fg(ui::ACCENT)];
                         spans.extend(l.spans.iter().cloned());
@@ -598,34 +692,68 @@ fn num(n: Option<u32>) -> String {
     n.map_or("    ".into(), |n| format!("{n:>4}"))
 }
 
-fn diff_line(l: &DiffLine, code: &StyledLine, cursor: Option<usize>) -> Line<'static> {
+/// The cells `start..start + len` of a diff line's code, behind its gutter
+/// (blank on the continuation rows of a wrapped line).
+fn diff_line(
+    l: &DiffLine,
+    code: &StyledLine,
+    cursor: Option<usize>,
+    first: bool,
+    start: usize,
+    len: usize,
+) -> Line<'static> {
     let (marker, bg) = match l.kind {
         Kind::Add => ("+", Some(ADD_BG)),
         Kind::Del => ("-", Some(DEL_BG)),
         Kind::Hunk | Kind::Meta => {
-            return Line::from(vec![
-                Span::raw(" ".repeat(GUTTER)),
-                l.text.clone().fg(ui::ACCENT).add_modifier(Modifier::DIM),
-            ]);
+            let mut spans = vec![Span::raw(" ".repeat(GUTTER))];
+            spans.extend(slice(
+                &[l.text.clone().fg(ui::ACCENT).add_modifier(Modifier::DIM)],
+                start,
+                len,
+            ));
+            return Line::from(spans);
         }
         Kind::Context => (" ", None),
     };
-    let mut spans = vec![
-        Span::styled(format!("{} {} ", num(l.old), num(l.new)), DIM),
-        Span::styled(
-            format!("{marker} "),
-            Style::new().fg(if l.kind == Kind::Add { Color::Green } else { Color::Red }),
-        ),
-    ];
+    let mut spans = if first {
+        vec![
+            Span::styled(format!("{} {} ", num(l.old), num(l.new)), DIM),
+            Span::styled(
+                format!("{marker} "),
+                Style::new().fg(if l.kind == Kind::Add { Color::Green } else { Color::Red }),
+            ),
+        ]
+    } else {
+        vec![Span::raw(" ".repeat(GUTTER))]
+    };
+    let code = slice(code, start, len);
     spans.extend(match cursor {
-        Some(c) => with_cursor(code, c),
-        None => code.clone(),
+        Some(c) => with_cursor(&code, c),
+        None => code,
     });
     let line = Line::from(spans);
     match bg {
         Some(bg) => line.bg(bg),
         None => line,
     }
+}
+
+/// The cells `start..start + len` of a styled line.
+fn slice(spans: &[Span<'static>], start: usize, len: usize) -> Vec<Span<'static>> {
+    let end = start.saturating_add(len);
+    let mut pos = 0;
+    let mut out = Vec::new();
+    for s in spans {
+        let n = s.content.chars().count();
+        let (a, b) = (start.max(pos), end.min(pos + n));
+        if a < b {
+            let text: String = s.content.chars().skip(a - pos).take(b - a).collect();
+            out.push(Span::styled(text, s.style));
+        }
+        pos += n;
+    }
+    out
 }
 
 /// Next/previous word start from `col`, vim `w`/`b` style.
@@ -741,6 +869,15 @@ mod tests {
                 .any(|s| s.content == "c" && s.style.add_modifier.contains(Modifier::REVERSED))
         );
         assert_eq!(with_cursor(&spans, 9).last().unwrap().content, " ");
+    }
+
+    #[test]
+    fn slices() {
+        let spans = vec![Span::raw("abc"), Span::raw("def")];
+        let text = |v: Vec<Span>| v.iter().map(|s| s.content.to_string()).collect::<String>();
+        assert_eq!(text(slice(&spans, 2, 3)), "cde");
+        assert_eq!(text(slice(&spans, 4, usize::MAX)), "ef");
+        assert_eq!(text(slice(&spans, 9, 3)), "");
     }
 
     #[test]

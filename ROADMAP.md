@@ -28,7 +28,9 @@ the current version are listed at the end.
 ## Review experience
 
 - [ ] Side-by-side diff mode.
-- [ ] Horizontal scrolling (long lines are cut today).
+- [x] Horizontal scrolling and line wrap (`Alt-z`) in the diff; the code
+      buffers still cut long lines.
+- [x] Hide the file list (`Ctrl-e`).
 - [ ] Expand context around hunks (the full file is already available).
 - [ ] Directory tree in the file list, with folding.
 - [ ] Diff for files GitHub returns no patch for (binaries aside): compute it

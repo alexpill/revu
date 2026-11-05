@@ -370,6 +370,8 @@ impl App {
                     // The wheel scrolls whatever has focus, like j/k.
                     Event::Mouse(m) if m.kind == MouseEventKind::ScrollDown => self.on_key(KeyCode::Down.into()),
                     Event::Mouse(m) if m.kind == MouseEventKind::ScrollUp => self.on_key(KeyCode::Up.into()),
+                    Event::Mouse(m) if m.kind == MouseEventKind::ScrollLeft => self.on_key(KeyCode::Left.into()),
+                    Event::Mouse(m) if m.kind == MouseEventKind::ScrollRight => self.on_key(KeyCode::Right.into()),
                     Event::Mouse(m) if m.kind == MouseEventKind::Down(MouseButton::Left) => {
                         self.on_click(Position::new(m.column, m.row))
                     }

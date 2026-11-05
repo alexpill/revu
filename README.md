@@ -158,6 +158,8 @@ Press `?` anywhere for the keys of the current screen.
 |---|---|
 | `1` `2` `3`… `H`/`L` | conversation, files, open buffers |
 | `Tab` | files: switch between list and diff |
+| `Ctrl-e` | files: hide or show the file list |
+| `Alt-z` | diff: wrap long lines (otherwise moving along a line scrolls sideways) |
 | `[` `]` / `{` `}` | previous / next file, hunk |
 | `Space` | toggle viewed and move to the next unviewed file |
 | `j/k h/l w/b 0/$ gg/G Ctrl-d/u` | move |
