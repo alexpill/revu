@@ -31,6 +31,17 @@ the current version are listed at the end.
 - [ ] Directory tree in the file list, with folding.
 - [ ] Diff for files GitHub returns no patch for (binaries aside): compute it
       from the local clone.
+- [ ] **Vim mode in the comment box.** It is a `ratatui-textarea` with its
+      Emacs-like keys today; add Normal / Insert / Visual modes on top
+      (`hjkl`, `w`/`b`/`e`, `0`/`$`, `x`, `dd`, `o`/`O`, `u`/`Ctrl-r`, `y`/`p`,
+      counts), with the mode shown in the box border, like the `vim` example
+      of ratatui-textarea. Optional (`[compose] vim = true`?) so the box stays
+      usable for non-Vim users; `Ctrl-o` to `$EDITOR` remains for the rest.
+      Do it with a shared `app/vim.rs` that turns keys into motions (count,
+      pending `g`/`f`/`t`), used by the diff, the code buffers and the box
+      (motions mapped to `CursorMove`), instead of the per-view key matches
+      in `files.rs` and `code.rs` today; the motions of the "Read-only
+      Vim-like editor" section then land everywhere at once.
 - [ ] Edit your own comments; suggestion blocks; reactions.
 - [ ] Delete PR-level (issue) comments; review comments can be deleted already.
 - [ ] Filter threads by author (e.g. hide or show only bot reviews), jump
