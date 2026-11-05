@@ -17,7 +17,10 @@ use crate::source::Source;
 use anyhow::Result;
 use ratatui::DefaultTerminal;
 use ratatui::Frame;
-use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use ratatui::crossterm::event::{
+    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseEventKind,
+};
+use ratatui::crossterm::execute;
 use ratatui::layout::{Constraint, Layout};
 use ratatui::style::Stylize;
 use ratatui::text::{Line, Span};
@@ -235,6 +238,14 @@ impl App {
             while event::poll(timeout)? {
                 match event::read()? {
                     Event::Key(k) if k.kind == KeyEventKind::Press => self.on_key(k),
+                    // The wheel scrolls whatever has focus, like j/k.
+                    Event::Mouse(m) if m.kind == MouseEventKind::ScrollDown => self.on_key(KeyCode::Down.into()),
+                    Event::Mouse(m) if m.kind == MouseEventKind::ScrollUp => self.on_key(KeyCode::Up.into()),
+                    // Motion reports flood in while the pointer moves; don't redraw for them.
+                    Event::Mouse(_) => {
+                        timeout = Duration::ZERO;
+                        continue;
+                    }
                     _ => {}
                 }
                 dirty = true;
@@ -367,11 +378,23 @@ impl App {
     }
 }
 
+/// `ratatui::init` plus mouse reporting.
+pub fn init_terminal() -> DefaultTerminal {
+    let terminal = ratatui::init();
+    let _ = execute!(std::io::stdout(), EnableMouseCapture);
+    terminal
+}
+
+pub fn restore_terminal() {
+    let _ = execute!(std::io::stdout(), DisableMouseCapture);
+    ratatui::restore();
+}
+
 /// Runs a command with the terminal handed over to it.
 pub fn with_terminal_released(cmd: &mut Command) -> Result<()> {
-    ratatui::restore();
+    restore_terminal();
     let status = cmd.status();
-    let _ = ratatui::init();
+    init_terminal();
     let status = status?;
     anyhow::ensure!(status.success(), "{cmd:?} exited with {status}");
     Ok(())

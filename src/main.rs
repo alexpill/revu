@@ -21,8 +21,8 @@ fn main() -> anyhow::Result<()> {
         cli::Command::Run(args) => args,
     };
     let cfg = config::load(&args)?;
-    let mut terminal = ratatui::init();
+    let mut terminal = app::init_terminal();
     let res = app::App::new(cfg).run(&mut terminal);
-    ratatui::restore();
+    app::restore_terminal();
     res
 }
