@@ -465,7 +465,7 @@ impl FilesView {
             .collect();
         let thread_rows = |t: usize, th: &crate::gh::model::Thread, rows: &mut Vec<Row>| {
             for (c, line) in conversation::thread(th, hl) {
-                for l in wrap(line, width.saturating_sub(GUTTER + 2)) {
+                for l in ui::wrap_comment(line, width.saturating_sub(GUTTER + 2)) {
                     rows.push(Row::Thread(t, c, l));
                 }
             }
@@ -654,48 +654,9 @@ pub fn with_cursor(spans: &[Span<'static>], col: usize) -> Vec<Span<'static>> {
     out
 }
 
-/// Word-wraps a styled line to `width` columns.
-pub fn wrap(line: Line<'static>, width: usize) -> Vec<Line<'static>> {
-    let width = width.max(10);
-    let mut out = vec![Vec::new()];
-    let mut used = 0;
-    for span in line.spans {
-        for word in span.content.split_inclusive(' ') {
-            let w = word.chars().count();
-            if used + w > width && used > 0 {
-                out.push(Vec::new());
-                used = 0;
-            }
-            // Words longer than a line are hard-split.
-            let mut chars: Vec<char> = word.chars().collect();
-            while chars.len() > width {
-                let head: String = chars.drain(..width).collect();
-                out.last_mut().unwrap().push(Span::styled(head, span.style));
-                out.push(Vec::new());
-            }
-            used += chars.len();
-            out.last_mut()
-                .unwrap()
-                .push(Span::styled(chars.into_iter().collect::<String>(), span.style));
-        }
-    }
-    out.into_iter().map(Line::from).collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn text(l: &Line) -> String {
-        l.spans.iter().map(|s| s.content.as_ref()).collect()
-    }
-
-    #[test]
-    fn wraps_words() {
-        let lines = wrap(Line::from("aaaa bbbb cccc dddddddddddddddddddddd"), 10);
-        let t: Vec<_> = lines.iter().map(text).collect();
-        assert_eq!(t, vec!["aaaa bbbb ", "cccc ", "dddddddddd", "dddddddddd", "dd"]);
-    }
 
     #[test]
     fn cursor_cell() {

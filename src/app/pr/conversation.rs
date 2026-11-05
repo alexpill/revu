@@ -44,8 +44,12 @@ pub fn render(f: &mut Frame, area: Rect, d: &PrDetail, hl: &Highlighter, scroll:
     } else {
         &d.body
     };
+    let width = main.width.saturating_sub(2) as usize;
     lines.extend(ui::comment(&d.author, &d.created_at, "".into(), body, hl));
+    lines.push(ui::separator(width));
+    lines.push(Line::default());
     lines.extend(timeline(d, hl));
+    let lines: Vec<_> = lines.into_iter().flat_map(|l| ui::wrap_comment(l, width)).collect();
 
     let scroll = scroll.min(lines.len().saturating_sub(1) as u16);
     let p = Paragraph::new(lines)

@@ -114,10 +114,14 @@ impl IssueScreen {
             lines.push(Line::from(format!("assigned: {}", who.join(", "))).dark_gray());
         }
         lines.push(Line::default());
+        let width = area.width.saturating_sub(2) as usize;
         lines.extend(ui::comment(&d.author, &d.created_at, "".into(), &d.body, &ctx.hl));
+        lines.push(ui::separator(width));
+        lines.push(Line::default());
         for c in &d.comments.nodes {
             lines.extend(ui::comment(&c.author, &c.created_at, "".into(), &c.body, &ctx.hl));
         }
+        let lines: Vec<_> = lines.into_iter().flat_map(|l| ui::wrap_comment(l, width)).collect();
         self.scroll = self.scroll.min(lines.len().saturating_sub(1) as u16);
         let p = Paragraph::new(lines)
             .wrap(Wrap { trim: false })

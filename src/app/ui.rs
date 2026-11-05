@@ -9,6 +9,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 pub const ACCENT: Color = Color::Cyan;
 pub const DIM: Style = Style::new().fg(Color::DarkGray);
 pub const SELECTED: Style = Style::new().bg(Color::Rgb(45, 50, 65));
+/// Left bar of a comment body, in its author's color.
+const BAR: &str = "▍ ";
 
 pub fn block(title: impl Into<String>, focused: bool) -> Block<'static> {
     let title = title.into();
@@ -81,18 +83,36 @@ pub fn comment(
     body: &str,
     hl: &crate::highlight::Highlighter,
 ) -> Vec<Line<'static>> {
+    let who = login(author);
+    let c = author_color(&who);
     let mut lines = vec![Line::from(vec![
-        "▍".fg(ACCENT),
-        login(author).bold(),
+        "▍".fg(c),
+        format!(" {who} ").bg(c).black().bold(),
         format!(" · {} ", ago(when)).dark_gray(),
         badge,
     ])];
     lines.extend(crate::markdown::render(body, hl).into_iter().map(|mut l| {
-        l.spans.insert(0, "▏ ".dark_gray());
+        l.spans.insert(0, BAR.fg(c));
         l
     }));
     lines.push(Line::default());
     lines
+}
+
+/// Stable per-login color, so a change of speaker stands out in a thread.
+fn author_color(login: &str) -> Color {
+    const PALETTE: [Color; 6] = [
+        Color::Cyan,
+        Color::Magenta,
+        Color::Yellow,
+        Color::Blue,
+        Color::Green,
+        Color::LightRed,
+    ];
+    let h = login
+        .bytes()
+        .fold(0usize, |h, b| h.wrapping_mul(31).wrapping_add(b as usize));
+    PALETTE[h % PALETTE.len()]
 }
 
 pub fn login(a: &Option<crate::gh::model::Actor>) -> String {
@@ -129,8 +149,69 @@ fn parse_ts(ts: &str) -> Option<i64> {
     Some(days * 86400 + hh * 3600 + mm * 60 + ss)
 }
 
+/// Word-wraps a styled line to `width` columns.
+pub fn wrap(line: Line<'static>, width: usize) -> Vec<Line<'static>> {
+    let width = width.max(10);
+    let mut out = vec![Vec::new()];
+    let mut used = 0;
+    for span in line.spans {
+        for word in span.content.split_inclusive(' ') {
+            let w = word.chars().count();
+            if used + w > width && used > 0 {
+                out.push(Vec::new());
+                used = 0;
+            }
+            // Words longer than a line are hard-split.
+            let mut chars: Vec<char> = word.chars().collect();
+            while chars.len() > width {
+                let head: String = chars.drain(..width).collect();
+                out.last_mut().unwrap().push(Span::styled(head, span.style));
+                out.push(Vec::new());
+            }
+            used += chars.len();
+            out.last_mut()
+                .unwrap()
+                .push(Span::styled(chars.into_iter().collect::<String>(), span.style));
+        }
+    }
+    out.into_iter().map(Line::from).collect()
+}
+
+/// A faint full-width rule, to set the description apart from the timeline.
+pub fn separator(width: usize) -> Line<'static> {
+    Line::from("─".repeat(width)).style(DIM)
+}
+
+/// Wraps a line from [`comment`], repeating the author's bar on every row.
+pub fn wrap_comment(mut line: Line<'static>, width: usize) -> Vec<Line<'static>> {
+    if line.spans.first().is_none_or(|s| s.content != BAR) {
+        return wrap(line, width);
+    }
+    let bar = line.spans.remove(0);
+    let mut rows = wrap(line, width.saturating_sub(BAR.chars().count()));
+    for r in &mut rows {
+        r.spans.insert(0, bar.clone());
+    }
+    rows
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn wraps_words() {
+        let lines = super::wrap(ratatui::text::Line::from("aaaa bbbb cccc dddddddddddddddddddddd"), 10);
+        let t: Vec<_> = lines.iter().map(|l| l.to_string()).collect();
+        assert_eq!(t, vec!["aaaa bbbb ", "cccc ", "dddddddddd", "dddddddddd", "dd"]);
+    }
+
+    #[test]
+    fn wrapped_comment_keeps_its_bar() {
+        use ratatui::text::Line;
+        let rows = super::wrap_comment(Line::from(vec![super::BAR.into(), "aaaa bbbb cccc".into()]), 12);
+        let t: Vec<_> = rows.iter().map(|l| l.to_string()).collect();
+        assert_eq!(t, vec!["▍ aaaa bbbb ", "▍ cccc"]);
+    }
+
     #[test]
     fn timestamps() {
         assert_eq!(super::parse_ts("1970-01-02T00:00:01Z"), Some(86401));
