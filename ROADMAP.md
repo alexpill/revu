@@ -62,8 +62,9 @@ the current version are listed at the end.
 
 ## Pull request actions
 
-- [ ] Merge, mark ready for review / convert to draft, request reviewers,
-      edit labels and assignees.
+- [x] Merge (merge commit, squash, rebase, admin merge) and mark ready for
+      review / convert to draft (`M`, on the PR screen and the home lists).
+- [ ] Request reviewers, edit labels and assignees.
 - [ ] CI: list failing jobs, open logs, re-run.
 - [ ] Check out the PR locally (`gh pr checkout`).
 
@@ -106,7 +107,7 @@ Make buffers and the diff feel like Neovim, still without editing:
       list query would need each PR's files and `viewerViewedState`, which
       makes an already slow GitHub query heavier: probably fetch it lazily
       (visible rows only, or a second request after the list shows).
-- [ ] **PR actions from the home lists**, without opening the PR: mark
+- [x] **PR actions from the home lists**, without opening the PR: mark
       ready for review / convert to draft, merge (pick merge, squash or
       rebase) and bypass merge (admin merge that skips the branch protection
       rules, like `gh pr merge --admin`), behind a confirmation. A menu on the

@@ -72,6 +72,15 @@ impl Check {
     }
 }
 
+/// The merge methods a repo allows.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Merges {
+    pub merge_commit_allowed: bool,
+    pub squash_merge_allowed: bool,
+    pub rebase_merge_allowed: bool,
+}
+
 fn rollup(commits: &Nodes<CommitNode>) -> Option<&Rollup> {
     commits.nodes.first()?.commit.status_check_rollup.as_ref()
 }
@@ -79,6 +88,7 @@ fn rollup(commits: &Nodes<CommitNode>) -> Option<&Rollup> {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PrSummary {
+    pub id: String,
     pub number: u64,
     pub title: String,
     pub is_draft: bool,
@@ -89,6 +99,7 @@ pub struct PrSummary {
     pub assignees: Nodes<Actor>,
     pub review_requests: Nodes<ReviewRequest>,
     pub commits: Nodes<CommitNode>,
+    pub repository: Merges,
 }
 
 impl PrSummary {
@@ -234,6 +245,7 @@ pub struct PrDetail {
     pub comments: Nodes<Comment>,
     pub reviews: Nodes<Review>,
     pub review_threads: Nodes<Thread>,
+    pub repository: Merges,
 }
 
 impl PrDetail {

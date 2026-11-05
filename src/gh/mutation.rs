@@ -4,7 +4,7 @@
 //! sequentially keeps rapid toggles (viewed/unviewed) in order on GitHub's side.
 
 use super::graphql;
-use anyhow::{Result, anyhow};
+use anyhow::{Result, anyhow, bail};
 use serde_json::{Value, json};
 use std::sync::mpsc::{Sender, channel};
 
@@ -42,6 +42,16 @@ pub enum Mutation {
     },
     Comment {
         body: String,
+    },
+    /// Convert to draft, or mark ready for review.
+    SetDraft {
+        draft: bool,
+    },
+    /// method: MERGE | SQUASH | REBASE. `admin` bypasses the branch protection
+    /// rules, like `gh pr merge --admin`.
+    Merge {
+        method: &'static str,
+        admin: bool,
     },
 }
 
@@ -163,8 +173,42 @@ fn run(pr: &str, m: &Mutation) -> Result<()> {
                 json!({ "id": pr, "body": body }),
             )?;
         }
+        Mutation::SetDraft { draft } => {
+            let op = if *draft {
+                "convertPullRequestToDraft"
+            } else {
+                "markPullRequestReadyForReview"
+            };
+            let q = format!("mutation($pr: ID!) {{ {op}(input: {{pullRequestId: $pr}}) {{ clientMutationId }} }}");
+            graphql(&q, json!({ "pr": pr }))?;
+        }
+        Mutation::Merge { method, admin } => {
+            // The API merges with the viewer's admin rights: without --admin, refuse what the rules block, as gh does.
+            let data = graphql(
+                "query($pr: ID!) { node(id: $pr) { ... on PullRequest { mergeStateStatus } } }",
+                json!({ "pr": pr }),
+            )?;
+            if let Some(why) = blocked(data["node"]["mergeStateStatus"].as_str().unwrap_or_default(), *admin) {
+                bail!("not mergeable: {why}");
+            }
+            graphql(
+                r#"mutation($pr: ID!, $method: PullRequestMergeMethod!) {
+                  mergePullRequest(input: {pullRequestId: $pr, mergeMethod: $method}) { clientMutationId } }"#,
+                json!({ "pr": pr, "method": method }),
+            )?;
+        }
     }
     Ok(())
+}
+
+/// Why a PR in this `mergeStateStatus` can't be merged (same rules as `gh pr merge`).
+fn blocked(status: &str, admin: bool) -> Option<&'static str> {
+    match status {
+        "BLOCKED" if !admin => Some("the base branch policy prohibits the merge (admin merge bypasses it)"),
+        "BEHIND" if !admin => Some("the head branch is not up to date with the base branch"),
+        "DIRTY" => Some("the merge commit cannot be cleanly created"),
+        _ => None,
+    }
 }
 
 /// The viewer's unsubmitted review on this PR, if any.
@@ -189,5 +233,17 @@ fn create_review(pr: &str) -> Result<String> {
     match &data["addPullRequestReview"]["pullRequestReview"]["id"] {
         Value::String(id) => Ok(id.clone()),
         _ => Err(anyhow!("could not create a pending review")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn blocked() {
+        assert!(super::blocked("CLEAN", false).is_none());
+        assert!(super::blocked("BLOCKED", false).is_some());
+        assert!(super::blocked("BLOCKED", true).is_none());
+        assert!(super::blocked("BEHIND", true).is_none());
+        assert!(super::blocked("DIRTY", true).is_some());
     }
 }

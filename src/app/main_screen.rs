@@ -1,10 +1,11 @@
 //! Home: open PRs and issues across GitHub, grouped by repo, most pressing first.
 
+use super::actions;
 use super::issue::IssueScreen;
 use super::pr::PrScreen;
 use super::ui::{self, DIM, SELECTED};
 use super::{Action, Ctx, Msg, Screen};
-use crate::gh::{self, model::*};
+use crate::gh::{self, model::*, mutation::Mutation};
 use anyhow::Result;
 use ratatui::Frame;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -25,6 +26,7 @@ pub const HELP: &[(&str, &str)] = &[
     ("/", "filter by text"),
     ("c", "clone the repo (remembered for local reads and LSP)"),
     ("o", "open in browser"),
+    ("M", "PR actions: ready / draft, merge, admin merge (confirmed first)"),
     ("Ctrl-r", "refresh"),
     ("q", "quit"),
 ];
@@ -163,6 +165,7 @@ pub struct MainScreen {
     sel: TableState,
     /// Text being typed after `/`.
     input: Option<String>,
+    actions: Option<actions::Menu>,
     /// As last rendered, for clicks.
     tab_rects: Vec<Rect>,
     table_area: Rect,
@@ -186,6 +189,7 @@ impl MainScreen {
             folded: HashSet::new(),
             sel: TableState::default().with_selected(0),
             input: None,
+            actions: None,
             tab_rects: Vec::new(),
             table_area: Rect::default(),
         }
@@ -226,6 +230,25 @@ impl MainScreen {
             }
             Err(e) => Err(e.to_string()),
         });
+    }
+
+    /// Shows a PR action that went through on its row, without a search
+    /// (GitHub's search index can lag behind the write).
+    pub fn on_mutated(&mut self, key: super::Key, m: &Mutation) {
+        let is = |e: &Entry| (e.repo, e.item.number()) == key;
+        for entries in self.data.iter_mut().flatten().flatten() {
+            match m {
+                Mutation::SetDraft { draft } => {
+                    for e in entries.iter_mut().filter(|e| is(e)) {
+                        if let Item::Pr(p) = &mut e.item {
+                            p.is_draft = *draft;
+                        }
+                    }
+                }
+                Mutation::Merge { .. } => entries.retain(|e| !is(e)),
+                _ => {}
+            }
+        }
     }
 
     fn entries(&self) -> Option<&Vec<Entry>> {
@@ -269,6 +292,12 @@ impl MainScreen {
     }
 
     pub fn on_key(&mut self, k: KeyEvent, ctx: &mut Ctx) -> Action {
+        if let Some(menu) = &mut self.actions {
+            if !menu.on_key(k, ctx) {
+                self.actions = None;
+            }
+            return Action::None;
+        }
         if let Some(input) = &mut self.input {
             match k.code {
                 KeyCode::Esc | KeyCode::Enter => self.input = None,
@@ -332,6 +361,17 @@ impl MainScreen {
                     ctx.browse(key);
                 }
             }
+            KeyCode::Char('M') => {
+                if let Some(Line_::Entry(i)) = self.selected(ctx)
+                    && let Some(Entry {
+                        repo,
+                        item: Item::Pr(p),
+                    }) = self.entries().map(|e| &e[i])
+                {
+                    let key = (*repo, p.number);
+                    self.actions = Some(actions::Menu::new(key, &p.id, &p.title, p.is_draft, &p.repository));
+                }
+            }
             KeyCode::Enter => match self.selected(ctx) {
                 Some(Line_::Repo(repo, ..)) => {
                     if !self.folded.remove(&repo) {
@@ -365,7 +405,7 @@ impl MainScreen {
 
     /// A tab switches to it, a row selects it, the selected row opens.
     pub fn on_click(&mut self, pos: Position, ctx: &mut Ctx) -> Action {
-        if self.input.is_some() {
+        if self.input.is_some() || self.actions.take().is_some() {
             return Action::None;
         }
         if let Some(t) = self.tab_rects.iter().position(|r| r.contains(pos)) {
@@ -420,6 +460,9 @@ impl MainScreen {
                 f.render_widget(Paragraph::new(msg).yellow(), body);
             }
             Some(Ok(_)) => self.render_list(f, body, ctx),
+        }
+        if let Some(menu) = &self.actions {
+            menu.render(f, ctx);
         }
     }
 
@@ -551,7 +594,8 @@ mod tests {
                 "number": n, "title": "t", "isDraft": false, "updatedAt": "", "headRefName": "b",
                 "reviewDecision": null, "author": { "login": author },
                 "assignees": { "nodes": [] }, "reviewRequests": { "nodes": reviewers },
-                "commits": { "nodes": [] },
+                "commits": { "nodes": [] }, "id": "x",
+                "repository": { "mergeCommitAllowed": true, "squashMergeAllowed": true, "rebaseMergeAllowed": true },
             }))
             .unwrap(),
         )

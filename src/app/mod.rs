@@ -3,6 +3,7 @@
 //! Background work (gh calls, git, LSP I/O) runs on plain threads that report
 //! back through a single `Msg` channel; the UI thread never blocks on I/O.
 
+mod actions;
 mod issue;
 mod main_screen;
 mod picker;
@@ -510,6 +511,9 @@ impl App {
                 return;
             }
             Msg::Mutated(key, m, res) => {
+                if res.is_ok() {
+                    self.main.on_mutated(key, &m);
+                }
                 match &res {
                     Ok(()) if m.needs_reload() => self.ctx.info("saved"),
                     Ok(()) => {}

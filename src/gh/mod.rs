@@ -86,8 +86,8 @@ fn rest_paginated<T: DeserializeOwned>(path: &str) -> Result<Vec<T>> {
 
 const FIELDS: &str = r#"
 fragment PrFields on PullRequest {
-  number title isDraft updatedAt headRefName reviewDecision
-  repository { nameWithOwner }
+  id number title isDraft updatedAt headRefName reviewDecision
+  repository { nameWithOwner mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed }
   author { login }
   assignees(first: 10) { nodes { login } }
   reviewRequests(first: 20) { nodes { requestedReviewer {
@@ -190,6 +190,7 @@ pub fn pr(owner: &str, name: &str, number: u64) -> Result<PrDetail> {
       pullRequest(number: $number) {
         id number title body state isDraft createdAt baseRefName headRefName headRefOid
         additions deletions changedFiles mergeable reviewDecision
+        repository { mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed }
         author { login }
         assignees(first: 10) { nodes { login } }
         labels(first: 20) { nodes { name } }
