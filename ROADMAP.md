@@ -103,7 +103,12 @@ Make buffers and the diff feel like Neovim, still without editing:
       list query would need each PR's files and `viewerViewedState`, which
       makes an already slow GitHub query heavier: probably fetch it lazily
       (visible rows only, or a second request after the list shows).
-
+- [ ] **PR actions from the home lists**, without opening the PR: mark
+      ready for review / convert to draft, merge (pick merge, squash or
+      rebase) and bypass merge (admin merge that skips the branch protection
+      rules, like `gh pr merge --admin`), behind a confirmation. A menu on the
+      selected row (or keys); the same actions as the "Pull request actions"
+      section, shared with the PR screen.
 - [ ] More than 50 PRs and 50 issues per view scope (pagination / load more).
 - [ ] Review requests made to a team you belong to.
 - [ ] Auto-refresh and notifications.
