@@ -206,6 +206,8 @@ fn blocked(status: &str, admin: bool) -> Option<&'static str> {
     match status {
         "BLOCKED" if !admin => Some("the base branch policy prohibits the merge (admin merge bypasses it)"),
         "BEHIND" if !admin => Some("the head branch is not up to date with the base branch"),
+        // Not computed yet: merging now could silently use the admin rights.
+        "UNKNOWN" if !admin => Some("GitHub is still checking it, try again in a moment"),
         "DIRTY" => Some("the merge commit cannot be cleanly created"),
         _ => None,
     }
@@ -244,6 +246,7 @@ mod tests {
         assert!(super::blocked("BLOCKED", false).is_some());
         assert!(super::blocked("BLOCKED", true).is_none());
         assert!(super::blocked("BEHIND", true).is_none());
+        assert!(super::blocked("UNKNOWN", false).is_some());
         assert!(super::blocked("DIRTY", true).is_some());
     }
 }
