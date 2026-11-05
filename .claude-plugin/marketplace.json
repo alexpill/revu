@@ -1,0 +1,5 @@
+{
+  "name": "revu",
+  "owner": { "name": "Alexandre Pilleyre" },
+  "plugins": [{ "name": "revu", "source": "./contrib/claude-code" }]
+}

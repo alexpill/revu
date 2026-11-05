@@ -77,12 +77,21 @@ elsewhere it copies the command to run). In the diff, `a` on a line, a `v`
 range or a thread opens the comment box, and what you write is sent to Claude
 (framed as the plugin's, since it quotes others' code and comments), with the file, lines, diff and thread attached.
 
-```sh
-claude --plugin-dir /path/to/revu/contrib/claude-code
+Install it from a Claude Code prompt (`y` to add the marketplace, then a scope):
+
+```
+/plugin install revu --marketplace alexpill/revu
 ```
 
-Set the plugin's `command` option (in `/config`) if `revu` is not on your
-`PATH`, e.g. `nix run github:alexpill/revu --`.
+or from a shell, setting how to start revu if it is not on your `PATH`:
+
+```sh
+claude plugin marketplace add alexpill/revu
+claude plugin install revu@revu --config command="nix run github:alexpill/revu --"
+```
+
+While working on the plugin, `claude --plugin-dir contrib/claude-code` runs it
+from the checkout.
 
 ## Configuration
 

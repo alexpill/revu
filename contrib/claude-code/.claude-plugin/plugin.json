@@ -2,6 +2,9 @@
   "name": "revu",
   "version": "0.1.0",
   "description": "/revu opens revu on this branch's pull request in a split; its `a` key sends a line, range or thread to Claude",
+  "author": {
+    "name": "Alexandre Pilleyre"
+  },
   "userConfig": {
     "command": {
       "type": "string",
