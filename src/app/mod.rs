@@ -4,6 +4,7 @@
 //! back through a single `Msg` channel; the UI thread never blocks on I/O.
 
 mod actions;
+mod help;
 mod issue;
 mod main_screen;
 mod picker;
@@ -27,7 +28,7 @@ use ratatui::crossterm::event::{
 use ratatui::crossterm::execute;
 use ratatui::layout::{Constraint, Layout, Position};
 use ratatui::style::Stylize;
-use ratatui::text::{Line, Span};
+use ratatui::text::Line;
 use ratatui::widgets::{Clear, Paragraph};
 use ratatui_textarea::{TextArea, WrapMode};
 use std::collections::HashMap;
@@ -309,7 +310,7 @@ pub struct App {
     rx: Receiver<Msg>,
     main: main_screen::MainScreen,
     stack: Vec<Screen>,
-    help: bool,
+    help: Option<help::Help>,
     quit: bool,
     /// Opened on one PR (`--pr`): leaving it quits.
     single: bool,
@@ -369,7 +370,7 @@ impl App {
             rx,
             main,
             stack,
-            help: false,
+            help: None,
             quit: false,
             single,
         }
@@ -428,8 +429,10 @@ impl App {
             self.quit = true;
             return;
         }
-        if self.help {
-            self.help = false;
+        if let Some(h) = &mut self.help {
+            if !h.on_key(k) {
+                self.help = None;
+            }
             return;
         }
         self.ctx.status = None;
@@ -479,8 +482,7 @@ impl App {
         if self.ctx.draft.is_some() || self.ctx.actions.take().is_some() {
             return;
         }
-        if self.help {
-            self.help = false;
+        if self.help.take().is_some() {
             return;
         }
         self.ctx.status = None;
@@ -494,7 +496,7 @@ impl App {
     /// Pane borders: hover, grab and drag. True when one reacted.
     fn on_mouse(&mut self, m: MouseEvent) -> bool {
         match self.stack.last_mut() {
-            Some(Screen::Pr(s)) if self.ctx.draft.is_none() && self.ctx.actions.is_none() && !self.help => {
+            Some(Screen::Pr(s)) if self.ctx.draft.is_none() && self.ctx.actions.is_none() && self.help.is_none() => {
                 s.on_mouse(m)
             }
             _ => false,
@@ -511,7 +513,15 @@ impl App {
                 }
             }
             Action::Quit => self.quit = true,
-            Action::Help => self.help = true,
+            Action::Help => {
+                let help = self.stack.last().map_or(main_screen::HELP, |s| s.help());
+                let mut lines: Vec<(String, String)> = help.iter().map(|&(k, d)| (k.into(), d.into())).collect();
+                if matches!(self.stack.last(), Some(Screen::Pr(_))) && !self.ctx.cfg.commands.is_empty() {
+                    lines.push((String::new(), "custom commands".into()));
+                    lines.extend(self.ctx.cfg.commands.iter().map(|c| (c.key.to_string(), c.run.clone())));
+                }
+                self.help = Some(help::Help::new(lines));
+            }
         }
     }
 
@@ -600,16 +610,10 @@ impl App {
 
     fn render(&mut self, f: &mut Frame) {
         let [body, bar] = Layout::vertical([Constraint::Fill(1), Constraint::Length(1)]).areas(f.area());
-        let help = match self.stack.last_mut() {
-            Some(s) => {
-                s.render(f, body, &self.ctx);
-                s.help()
-            }
-            None => {
-                self.main.render(f, body, &self.ctx);
-                main_screen::HELP
-            }
-        };
+        match self.stack.last_mut() {
+            Some(s) => s.render(f, body, &self.ctx),
+            None => self.main.render(f, body, &self.ctx),
+        }
 
         let mut right = Vec::new();
         if self.ctx.inflight > 0 {
@@ -639,15 +643,8 @@ impl App {
             f.render_widget(&d.text, area);
         }
 
-        if self.help {
-            let line = |k: &str, d: &str| Line::from(vec![format!("{k:>16}  ").cyan(), Span::from(d.to_string())]);
-            let mut lines: Vec<Line> = help.iter().map(|(k, d)| line(k, d)).collect();
-            if matches!(self.stack.last(), Some(Screen::Pr(_))) {
-                lines.extend(self.ctx.cfg.commands.iter().map(|c| line(&c.key.to_string(), &c.run)));
-            }
-            let area = ui::centered(f.area(), 76, lines.len() as u16 + 2);
-            f.render_widget(Clear, area);
-            f.render_widget(Paragraph::new(lines).block(ui::block("keys", true)), area);
+        if let Some(h) = &mut self.help {
+            h.render(f);
         }
     }
 }

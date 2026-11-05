@@ -16,14 +16,17 @@ use ratatui::widgets::{Cell, Paragraph, Row, Table, TableState, Tabs};
 use std::collections::HashSet;
 
 pub const HELP: &[(&str, &str)] = &[
+    ("", "navigation"),
     ("1-3 H/L Tab", "tabs: activity, pull requests, issues"),
     ("v", "view: involving me / pinned repos / everything you can access"),
     ("j/k g/G", "move"),
     ("Enter", "open PR / issue, or fold a repo"),
     ("click / wheel", "select (again to open) / move"),
+    ("", "filters"),
     ("r a m d", "review requested / assigned / mine / drafts (again: all)"),
     ("f", "cycle the filter"),
     ("/", "filter by text"),
+    ("", "general"),
     ("c", "clone the repo (remembered for local reads and LSP)"),
     ("o", "open in browser"),
     ("M", "actions: labels, assignees, reviewers, draft, merge"),

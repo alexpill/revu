@@ -149,7 +149,8 @@ sends, and a crash shows the end of its error output.
 
 ## Keys
 
-Press `?` anywhere for the keys of the current screen.
+Press `?` anywhere for the keys of the current screen, grouped by section;
+type to filter them by key or description, `Esc` closes.
 
 **Home**
 
@@ -229,7 +230,7 @@ Writes (viewed state, comments, reviews) are applied locally first and sent
 in order by a single worker.
 
 A new screen is a `Screen` variant in `app/mod.rs` with `on_key`, `on_msg`,
-`render` and `HELP`.
+`render` and `HELP` (an entry with an empty key starts a section).
 
 ## Development
 
