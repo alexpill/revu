@@ -1,5 +1,6 @@
-//! Read-only issue page: description and comments.
+//! Issue page: description and comments.
 
+use super::actions;
 use super::ui;
 use super::{Action, Ctx, Key, Msg};
 use crate::gh::{self, model::IssueDetail, mutation::Mutation};
@@ -14,6 +15,7 @@ pub const HELP: &[(&str, &str)] = &[
     ("j/k Ctrl-d/u", "scroll"),
     ("g/G", "top / bottom"),
     ("C", "comment"),
+    ("M", "actions: labels, assignees (confirmed first)"),
     ("o", "open in browser"),
     ("Ctrl-r", "refresh"),
     ("q / Esc", "back"),
@@ -64,6 +66,18 @@ impl IssueScreen {
             KeyCode::Char('g') => self.scroll = 0,
             KeyCode::Char('G') => self.scroll = u16::MAX / 2,
             KeyCode::Char('o') => ctx.browse(self.key),
+            KeyCode::Char('M') => {
+                if let Some(Ok(d)) = &self.detail {
+                    ctx.actions(actions::Menu::new(
+                        self.key,
+                        &d.id,
+                        &d.title,
+                        &d.labels,
+                        &d.assignees,
+                        None,
+                    ));
+                }
+            }
             KeyCode::Char('C') => {
                 if let Some(Ok(d)) = &self.detail {
                     ctx.compose(self.key, &d.id, Mutation::Comment { body: String::new() });

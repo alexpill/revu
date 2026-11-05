@@ -26,7 +26,7 @@ pub const HELP: &[(&str, &str)] = &[
     ("/", "filter by text"),
     ("c", "clone the repo (remembered for local reads and LSP)"),
     ("o", "open in browser"),
-    ("M", "PR actions: ready / draft, merge, admin merge (confirmed first)"),
+    ("M", "actions: labels, assignees, reviewers, draft, merge"),
     ("Ctrl-r", "refresh"),
     ("q", "quit"),
 ];
@@ -165,7 +165,6 @@ pub struct MainScreen {
     sel: TableState,
     /// Text being typed after `/`.
     input: Option<String>,
-    actions: Option<actions::Menu>,
     /// As last rendered, for clicks.
     tab_rects: Vec<Rect>,
     table_area: Rect,
@@ -189,7 +188,6 @@ impl MainScreen {
             folded: HashSet::new(),
             sel: TableState::default().with_selected(0),
             input: None,
-            actions: None,
             tab_rects: Vec::new(),
             table_area: Rect::default(),
         }
@@ -237,16 +235,37 @@ impl MainScreen {
     pub fn on_mutated(&mut self, key: super::Key, m: &Mutation) {
         let is = |e: &Entry| (e.repo, e.item.number()) == key;
         for entries in self.data.iter_mut().flatten().flatten() {
-            match m {
-                Mutation::SetDraft { draft } => {
-                    for e in entries.iter_mut().filter(|e| is(e)) {
-                        if let Item::Pr(p) = &mut e.item {
-                            p.is_draft = *draft;
+            if let Mutation::Merge { .. } = m {
+                entries.retain(|e| !is(e));
+            }
+            for e in entries.iter_mut().filter(|e| is(e)) {
+                match (m, &mut e.item) {
+                    (Mutation::SetDraft { draft }, Item::Pr(p)) => p.is_draft = *draft,
+                    (Mutation::RequestReview { login, .. }, Item::Pr(p)) => {
+                        p.review_requests.nodes.push(ReviewRequest {
+                            requested_reviewer: Some(Actor { login: login.clone() }),
+                        })
+                    }
+                    (
+                        Mutation::SetLabel { name, add, .. },
+                        Item::Pr(PrSummary { labels, .. }) | Item::Issue(IssueSummary { labels, .. }),
+                    ) => {
+                        labels.nodes.retain(|l| l.name != *name);
+                        if *add {
+                            labels.nodes.push(Label { name: name.clone() });
                         }
                     }
+                    (
+                        Mutation::SetAssignee { login, add, .. },
+                        Item::Pr(PrSummary { assignees, .. }) | Item::Issue(IssueSummary { assignees, .. }),
+                    ) => {
+                        assignees.nodes.retain(|a| a.login != *login);
+                        if *add {
+                            assignees.nodes.push(Actor { login: login.clone() });
+                        }
+                    }
+                    _ => {}
                 }
-                Mutation::Merge { .. } => entries.retain(|e| !is(e)),
-                _ => {}
             }
         }
     }
@@ -292,12 +311,6 @@ impl MainScreen {
     }
 
     pub fn on_key(&mut self, k: KeyEvent, ctx: &mut Ctx) -> Action {
-        if let Some(menu) = &mut self.actions {
-            if !menu.on_key(k, ctx) {
-                self.actions = None;
-            }
-            return Action::None;
-        }
         if let Some(input) = &mut self.input {
             match k.code {
                 KeyCode::Esc | KeyCode::Enter => self.input = None,
@@ -363,13 +376,21 @@ impl MainScreen {
             }
             KeyCode::Char('M') => {
                 if let Some(Line_::Entry(i)) = self.selected(ctx)
-                    && let Some(Entry {
-                        repo,
-                        item: Item::Pr(p),
-                    }) = self.entries().map(|e| &e[i])
+                    && let Some(e) = self.entries().map(|es| &es[i])
                 {
-                    let key = (*repo, p.number);
-                    self.actions = Some(actions::Menu::new(key, &p.id, &p.title, p.is_draft, &p.repository));
+                    let key = (e.repo, e.item.number());
+                    ctx.actions(match &e.item {
+                        Item::Pr(p) => {
+                            let pr = actions::Pr {
+                                open: true,
+                                is_draft: p.is_draft,
+                                merges: &p.repository,
+                                reviewers: &p.review_requests,
+                            };
+                            actions::Menu::new(key, &p.id, &p.title, &p.labels, &p.assignees, Some(pr))
+                        }
+                        Item::Issue(i) => actions::Menu::new(key, &i.id, &i.title, &i.labels, &i.assignees, None),
+                    });
                 }
             }
             KeyCode::Enter => match self.selected(ctx) {
@@ -405,7 +426,7 @@ impl MainScreen {
 
     /// A tab switches to it, a row selects it, the selected row opens.
     pub fn on_click(&mut self, pos: Position, ctx: &mut Ctx) -> Action {
-        if self.input.is_some() || self.actions.take().is_some() {
+        if self.input.is_some() {
             return Action::None;
         }
         if let Some(t) = self.tab_rects.iter().position(|r| r.contains(pos)) {
@@ -460,9 +481,6 @@ impl MainScreen {
                 f.render_widget(Paragraph::new(msg).yellow(), body);
             }
             Some(Ok(_)) => self.render_list(f, body, ctx),
-        }
-        if let Some(menu) = &self.actions {
-            menu.render(f, ctx);
         }
     }
 
@@ -594,7 +612,7 @@ mod tests {
                 "number": n, "title": "t", "isDraft": false, "updatedAt": "", "headRefName": "b",
                 "reviewDecision": null, "author": { "login": author },
                 "assignees": { "nodes": [] }, "reviewRequests": { "nodes": reviewers },
-                "commits": { "nodes": [] }, "id": "x",
+                "commits": { "nodes": [] }, "id": "x", "labels": { "nodes": [] },
                 "repository": { "mergeCommitAllowed": true, "squashMergeAllowed": true, "rebaseMergeAllowed": true },
             }))
             .unwrap(),

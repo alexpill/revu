@@ -57,6 +57,8 @@ pub enum Msg {
     /// From the language server with this id (not counted as a background job).
     Lsp(i64, crate::lsp::Event),
     Mutated(Key, Mutation, Result<()>),
+    /// (id, name) of a repo's labels or users, for the actions menu.
+    Choices(Key, actions::Edit, Result<Vec<(String, String)>>),
 }
 
 /// Something that needs the terminal, run between frames.
@@ -149,6 +151,7 @@ pub struct Ctx {
     status: Option<(String, bool)>,
     external: Option<External>,
     draft: Option<Draft>,
+    actions: Option<actions::Menu>,
     /// PRs whose review submit/discard is sent but not yet reloaded.
     pub submitting: Vec<Key>,
 }
@@ -205,6 +208,11 @@ impl Ctx {
                 Err(e) => self.error(format!("sending to Claude failed: {e}")),
             },
         }
+    }
+
+    /// Opens the actions menu of a PR or issue (the `M` key).
+    pub fn actions(&mut self, menu: actions::Menu) {
+        self.actions = Some(menu);
     }
 
     pub fn open_in_editor(&mut self, path: PathBuf, line: u32) {
@@ -340,6 +348,7 @@ impl App {
             status: None,
             external: None,
             draft: None,
+            actions: None,
             submitting: Vec::new(),
         };
         let single = pr.is_some();
@@ -425,6 +434,12 @@ impl App {
         if self.ctx.draft.is_some() {
             return self.on_draft_key(k);
         }
+        if let Some(mut menu) = self.ctx.actions.take() {
+            if menu.on_key(k, &mut self.ctx) {
+                self.ctx.actions = Some(menu);
+            }
+            return;
+        }
         let action = match self.stack.last_mut() {
             Some(s) => s.on_key(k, &mut self.ctx),
             None => self.main.on_key(k, &mut self.ctx),
@@ -459,7 +474,7 @@ impl App {
     }
 
     fn on_click(&mut self, pos: Position) {
-        if self.ctx.draft.is_some() {
+        if self.ctx.draft.is_some() || self.ctx.actions.take().is_some() {
             return;
         }
         if self.help {
@@ -507,6 +522,14 @@ impl App {
                         self.ctx.sources[i].local = Some(dir);
                     }
                     Err(e) => self.ctx.error(format!("clone failed: {e}")),
+                }
+                return;
+            }
+            Msg::Choices(key, edit, r) => {
+                if let Some(mut menu) = self.ctx.actions.take()
+                    && menu.on_choices(key, edit, r, &mut self.ctx)
+                {
+                    self.ctx.actions = Some(menu);
                 }
                 return;
             }
@@ -587,6 +610,10 @@ impl App {
         f.render_widget(Paragraph::new(Line::from(" ? help").dark_gray()), bar);
         f.render_widget(right, bar);
 
+        if let Some(mut menu) = self.ctx.actions.take() {
+            menu.render(f, &self.ctx);
+            self.ctx.actions = Some(menu);
+        }
         if let Some(d) = &mut self.ctx.draft {
             let area = ui::centered(f.area(), 90, 16);
             d.text.set_block(

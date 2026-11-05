@@ -98,6 +98,7 @@ pub struct PrSummary {
     pub author: Option<Actor>,
     pub assignees: Nodes<Actor>,
     pub review_requests: Nodes<ReviewRequest>,
+    pub labels: Nodes<Label>,
     pub commits: Nodes<CommitNode>,
     pub repository: Merges,
 }
@@ -124,6 +125,7 @@ impl PrSummary {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct IssueSummary {
+    pub id: String,
     pub number: u64,
     pub title: String,
     pub updated_at: String,

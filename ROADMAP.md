@@ -64,7 +64,9 @@ the current version are listed at the end.
 
 - [x] Merge (merge commit, squash, rebase, admin merge) and mark ready for
       review / convert to draft (`M`, on the PR screen and the home lists).
-- [ ] Request reviewers, edit labels and assignees.
+- [x] Request reviewers, edit labels and assignees (`M`, also on issues and
+      the home lists); removing a review request is not done yet (REST only).
+- [x] Delete the branch after merging (`delete_branch` in the config).
 - [ ] CI: list failing jobs, open logs, re-run.
 - [ ] Check out the PR locally (`gh pr checkout`).
 

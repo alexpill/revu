@@ -48,7 +48,7 @@ pub const HELP: &[(&str, &str)] = &[
     ("x", "close buffer"),
     ("S", "submit review: comment / approve / request changes"),
     ("C", "comment on the PR"),
-    ("M", "PR actions: ready / draft, merge, admin merge (confirmed first)"),
+    ("M", "actions: labels, assignees, reviewers, draft, merge"),
     ("o", "open in browser"),
     ("Ctrl-r", "refresh"),
     ("q / Esc", "back"),
@@ -124,7 +124,6 @@ pub struct PrScreen {
     tab: usize,
     conv_scroll: u16,
     submit_menu: bool,
-    actions: Option<actions::Menu>,
     /// Asking whether to clone the repo, for a feature that needs it.
     clone_prompt: bool,
     picker: Option<(Picker, PickFor)>,
@@ -156,7 +155,6 @@ impl PrScreen {
             tab: 0,
             conv_scroll: 0,
             submit_menu: false,
-            actions: None,
             clone_prompt: false,
             picker: None,
             tree: None,
@@ -553,12 +551,6 @@ impl PrScreen {
             }
             return Action::None;
         }
-        if let Some(menu) = &mut self.actions {
-            if !menu.on_key(k, ctx) {
-                self.actions = None;
-            }
-            return Action::None;
-        }
         if let Some((picker, _)) = &mut self.picker {
             match picker.on_key(k) {
                 Picked::Pending => {}
@@ -638,14 +630,24 @@ impl PrScreen {
                     ctx.compose(self.key, &id, Mutation::Comment { body: String::new() });
                 }
             }
-            KeyCode::Char('M') => match self.detail() {
-                Some(d) if d.state == "OPEN" => {
-                    let menu = actions::Menu::new(self.key, &d.id, &d.title, d.is_draft, &d.repository);
-                    self.actions = Some(menu);
+            KeyCode::Char('M') => {
+                if let Some(d) = self.detail() {
+                    let pr = actions::Pr {
+                        open: d.state == "OPEN",
+                        is_draft: d.is_draft,
+                        merges: &d.repository,
+                        reviewers: &d.review_requests,
+                    };
+                    ctx.actions(actions::Menu::new(
+                        self.key,
+                        &d.id,
+                        &d.title,
+                        &d.labels,
+                        &d.assignees,
+                        Some(pr),
+                    ));
                 }
-                Some(d) => ctx.info(format!("this PR is {}", d.state.to_lowercase())),
-                None => {}
-            },
+            }
             KeyCode::Char(c) if !ctrl && ctx.cfg.commands.iter().any(|cmd| cmd.key == c) => self.run_command(c, ctx),
             _ if self.tab != 0 => {}
             KeyCode::Char('d') if ctrl => self.conv_scroll += 15,
@@ -663,7 +665,6 @@ impl PrScreen {
         // A click dismisses popups rather than reaching what's under them.
         if self.hover.take().is_some()
             || std::mem::take(&mut self.submit_menu)
-            || self.actions.take().is_some()
             || std::mem::take(&mut self.clone_prompt)
             || self.picker.is_some()
         {
@@ -749,9 +750,6 @@ impl PrScreen {
             let area = ui::centered(f.area(), 34, lines.len() as u16 + 2);
             f.render_widget(Clear, area);
             f.render_widget(Paragraph::new(lines).block(ui::block("submit review", true)), area);
-        }
-        if let Some(menu) = &self.actions {
-            menu.render(f, ctx);
         }
         if self.clone_prompt {
             let dir = ctx.clone_target(self.key.0);

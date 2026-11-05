@@ -52,6 +52,22 @@ pub enum Mutation {
     Merge {
         method: &'static str,
         admin: bool,
+        delete_branch: bool,
+    },
+    /// On a PR or an issue; the name is for the screen, GitHub only needs the id.
+    SetLabel {
+        id: String,
+        name: String,
+        add: bool,
+    },
+    SetAssignee {
+        id: String,
+        login: String,
+        add: bool,
+    },
+    RequestReview {
+        id: String,
+        login: String,
     },
 }
 
@@ -182,19 +198,64 @@ fn run(pr: &str, m: &Mutation) -> Result<()> {
             let q = format!("mutation($pr: ID!) {{ {op}(input: {{pullRequestId: $pr}}) {{ clientMutationId }} }}");
             graphql(&q, json!({ "pr": pr }))?;
         }
-        Mutation::Merge { method, admin } => {
+        Mutation::Merge {
+            method,
+            admin,
+            delete_branch,
+        } => {
             // The API merges with the viewer's admin rights: without --admin, refuse what the rules block, as gh does.
             let data = graphql(
-                "query($pr: ID!) { node(id: $pr) { ... on PullRequest { mergeStateStatus } } }",
+                "query($pr: ID!) { node(id: $pr) { ... on PullRequest { mergeStateStatus isCrossRepository headRef { id } } } }",
                 json!({ "pr": pr }),
             )?;
-            if let Some(why) = blocked(data["node"]["mergeStateStatus"].as_str().unwrap_or_default(), *admin) {
+            let node = &data["node"];
+            if let Some(why) = blocked(node["mergeStateStatus"].as_str().unwrap_or_default(), *admin) {
                 bail!("not mergeable: {why}");
             }
             graphql(
                 r#"mutation($pr: ID!, $method: PullRequestMergeMethod!) {
                   mergePullRequest(input: {pullRequestId: $pr, mergeMethod: $method}) { clientMutationId } }"#,
                 json!({ "pr": pr, "method": method }),
+            )?;
+            // A fork's branch isn't ours to delete (gh skips it too); no ref: already gone.
+            if let (true, false, Some(head)) = (
+                *delete_branch,
+                node["isCrossRepository"] == true,
+                node["headRef"]["id"].as_str(),
+            ) {
+                graphql(
+                    "mutation($id: ID!) { deleteRef(input: {refId: $id}) { clientMutationId } }",
+                    json!({ "id": head }),
+                )
+                .map_err(|e| anyhow!("merged, but deleting the branch failed: {e}"))?;
+            }
+        }
+        Mutation::SetLabel { id, add, .. } => {
+            let op = if *add {
+                "addLabelsToLabelable"
+            } else {
+                "removeLabelsFromLabelable"
+            };
+            let q = format!(
+                "mutation($s: ID!, $id: ID!) {{ {op}(input: {{labelableId: $s, labelIds: [$id]}}) {{ clientMutationId }} }}"
+            );
+            graphql(&q, json!({ "s": pr, "id": id }))?;
+        }
+        Mutation::SetAssignee { id, add, .. } => {
+            let op = if *add {
+                "addAssigneesToAssignable"
+            } else {
+                "removeAssigneesFromAssignable"
+            };
+            let q = format!(
+                "mutation($s: ID!, $id: ID!) {{ {op}(input: {{assignableId: $s, assigneeIds: [$id]}}) {{ clientMutationId }} }}"
+            );
+            graphql(&q, json!({ "s": pr, "id": id }))?;
+        }
+        Mutation::RequestReview { id, .. } => {
+            graphql(
+                "mutation($pr: ID!, $id: ID!) { requestReviews(input: {pullRequestId: $pr, userIds: [$id], union: true}) { clientMutationId } }",
+                json!({ "pr": pr, "id": id }),
             )?;
         }
     }

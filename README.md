@@ -103,6 +103,7 @@ from the checkout.
 ```toml
 theme = "Catppuccin Mocha"     # optional, any bat theme name
 clone_dir = "~/code"           # optional: where `c` clones repos (default ~/code)
+delete_branch = true           # optional: delete the PR branch after merging from revu (default false)
 
 [[repos]]                      # pinned: listed first, see the "pinned repos" view
 name = "owner/repo"
@@ -161,6 +162,7 @@ Press `?` anywhere for the keys of the current screen.
 | `Enter` | open a PR or issue, fold or unfold a repo |
 | `c` | clone the repo into `clone_dir` |
 | `o` | open in browser |
+| `M` | actions on the PR or issue: labels, assignees, reviewers, ready / draft, merge (see below) |
 | `Ctrl-r` | refresh |
 
 **Pull request**
@@ -186,6 +188,7 @@ Press `?` anywhere for the keys of the current screen.
 | `e` | open the current position in `$EDITOR` |
 | `S` | submit review: comment, approve, request changes, or discard |
 | `C` | comment on the PR |
+| `M` | actions: labels, assignees, request a review, ready / draft, merge (merge commit, squash, rebase as the repo allows; uppercase: admin merge, bypassing branch protection), each confirmed with `y`; also on the issue page |
 | `a` | line, range or thread: ask Claude Code (revu started by `/revu`) |
 | your `[[commands]]` keys | run your custom commands |
 

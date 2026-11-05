@@ -89,14 +89,14 @@ fragment PrFields on PullRequest {
   id number title isDraft updatedAt headRefName reviewDecision
   repository { nameWithOwner mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed }
   author { login }
-  assignees(first: 10) { nodes { login } }
+  assignees(first: 10) { nodes { login } } labels(first: 20) { nodes { name } }
   reviewRequests(first: 20) { nodes { requestedReviewer {
     ... on User { login } ... on Team { login: slug } ... on Bot { login } } } }
   commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
 }
 fragment IssueFields on Issue {
-  number title updatedAt repository { nameWithOwner } author { login }
-  assignees(first: 10) { nodes { login } } labels(first: 5) { nodes { name } }
+  id number title updatedAt repository { nameWithOwner } author { login }
+  assignees(first: 10) { nodes { login } } labels(first: 20) { nodes { name } }
 }"#;
 
 /// Open PRs and issues matching any of `scopes` (GitHub search qualifiers,
@@ -168,6 +168,32 @@ pub fn orgs() -> Result<Vec<String>> {
     Ok(nodes
         .iter()
         .filter_map(|n| n["login"].as_str().map(String::from))
+        .collect())
+}
+
+/// (id, name) of the repo's labels, or (id, login) of the users who can be
+/// assigned or asked for a review.
+// shortcut: the first 100, page if a repo has more.
+pub fn choices(owner: &str, name: &str, users: bool) -> Result<Vec<(String, String)>> {
+    let field = match users {
+        true => "assignableUsers(first: 100) { nodes { id name: login } }",
+        false => "labels(first: 100) { nodes { id name } }",
+    };
+    let q =
+        format!("query($owner: String!, $name: String!) {{ repository(owner: $owner, name: $name) {{ {field} }} }}");
+    let data = graphql(&q, json!({ "owner": owner, "name": name }))?;
+    let repo = data["repository"]
+        .as_object()
+        .ok_or_else(|| anyhow!("repo not found"))?;
+    let nodes = repo
+        .values()
+        .next()
+        .and_then(|v| v["nodes"].as_array())
+        .cloned()
+        .unwrap_or_default();
+    Ok(nodes
+        .iter()
+        .filter_map(|n| Some((n["id"].as_str()?.to_string(), n["name"].as_str()?.to_string())))
         .collect())
 }
 

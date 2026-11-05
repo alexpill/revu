@@ -8,6 +8,7 @@
 //!
 //! theme = "Catppuccin Mocha"   # optional, any bat theme
 //! clone_dir = "~/code"        # where `c` clones repos (default ~/code)
+//! delete_branch = true        # delete the PR branch after merging from revu (default false)
 //!
 //! [lsp]                   # file extension -> server command (overrides the defaults)
 //! rs = ["rust-analyzer"]
@@ -37,6 +38,8 @@ pub struct Config {
     pub clone_dir: Option<PathBuf>,
     #[serde(default)]
     pub commands: Vec<CustomCommand>,
+    #[serde(default)]
+    pub delete_branch: bool,
 }
 
 impl Config {
