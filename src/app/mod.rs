@@ -26,6 +26,7 @@ use ratatui::layout::{Constraint, Layout, Position};
 use ratatui::style::Stylize;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Clear, Paragraph};
+use ratatui_textarea::{TextArea, WrapMode};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Command;
@@ -55,14 +56,23 @@ pub enum Msg {
 
 /// Something that needs the terminal, run between frames.
 pub enum External {
-    /// Write a comment in $EDITOR, then queue `mutation` with it as body.
+    /// Finish a comment in $EDITOR, then queue `mutation` with it as body.
     Compose {
         key: Key,
         pr_id: String,
         mutation: Mutation,
+        text: String,
     },
     /// Open a file at a 1-based line in $EDITOR.
     Open { path: PathBuf, line: u32 },
+}
+
+/// A comment being written in the compose box, sent as `mutation`'s body.
+pub struct Draft {
+    key: Key,
+    pr_id: String,
+    mutation: Mutation,
+    text: TextArea<'static>,
 }
 
 pub enum Action {
@@ -126,6 +136,7 @@ pub struct Ctx {
     inflight: usize,
     status: Option<(String, bool)>,
     external: Option<External>,
+    draft: Option<Draft>,
     /// PRs whose review submit/discard is sent but not yet reloaded.
     pub submitting: Vec<Key>,
 }
@@ -152,11 +163,24 @@ impl Ctx {
     }
 
     pub fn compose(&mut self, key: Key, pr_id: &str, mutation: Mutation) {
-        self.external = Some(External::Compose {
+        let mut text = TextArea::default();
+        text.set_wrap_mode(WrapMode::WordOrGlyph);
+        text.set_cursor_line_style(ratatui::style::Style::new());
+        self.draft = Some(Draft {
             key,
             pr_id: pr_id.to_string(),
             mutation,
+            text,
         });
+    }
+
+    /// Queues the comment; an empty one is dropped, except a review submit.
+    fn send(&mut self, key: Key, pr_id: &str, mutation: Mutation, body: String) {
+        if body.is_empty() && !matches!(mutation, Mutation::Submit { .. }) {
+            return self.info("empty comment, cancelled");
+        }
+        self.mutate(key, pr_id, mutation.with_body(body));
+        self.info("sending…");
     }
 
     pub fn open_in_editor(&mut self, path: PathBuf, line: u32) {
@@ -274,6 +298,7 @@ impl App {
             inflight: 0,
             status: None,
             external: None,
+            draft: None,
             submitting: Vec::new(),
         };
         let main = main_screen::MainScreen::new(&mut ctx);
@@ -341,6 +366,9 @@ impl App {
             return;
         }
         self.ctx.status = None;
+        if self.ctx.draft.is_some() {
+            return self.on_draft_key(k);
+        }
         let action = match self.stack.last_mut() {
             Some(s) => s.on_key(k, &mut self.ctx),
             None => self.main.on_key(k, &mut self.ctx),
@@ -348,7 +376,38 @@ impl App {
         self.apply(action);
     }
 
+    fn on_draft_key(&mut self, k: KeyEvent) {
+        let ctrl = k.modifiers.contains(KeyModifiers::CONTROL);
+        let Some(d) = self.ctx.draft.as_mut() else { return };
+        match k.code {
+            KeyCode::Esc => {
+                self.ctx.draft = None;
+                self.ctx.info("cancelled");
+            }
+            KeyCode::Char('s') if ctrl => {
+                let d = self.ctx.draft.take().unwrap();
+                let body = d.text.lines().join("\n").trim().to_string();
+                self.ctx.send(d.key, &d.pr_id, d.mutation, body);
+            }
+            KeyCode::Char('o') if ctrl => {
+                let d = self.ctx.draft.take().unwrap();
+                self.ctx.external = Some(External::Compose {
+                    text: d.text.lines().join("\n"),
+                    key: d.key,
+                    pr_id: d.pr_id,
+                    mutation: d.mutation,
+                });
+            }
+            _ => {
+                d.text.input(k);
+            }
+        }
+    }
+
     fn on_click(&mut self, pos: Position) {
+        if self.ctx.draft.is_some() {
+            return;
+        }
         if self.help {
             self.help = false;
             return;
@@ -418,15 +477,15 @@ impl App {
 
     fn run_external(&mut self, ext: External, _terminal: &mut DefaultTerminal) {
         match ext {
-            External::Compose { key, pr_id, mutation } => {
+            External::Compose {
+                key,
+                pr_id,
+                mutation,
+                text,
+            } => {
                 let file = config::cache_dir().join("COMMENT.md");
-                let allow_empty = matches!(mutation, Mutation::Submit { .. });
-                match compose(&file) {
-                    Ok(body) if body.is_empty() && !allow_empty => self.ctx.info("empty comment, cancelled"),
-                    Ok(body) => {
-                        self.ctx.mutate(key, &pr_id, mutation.with_body(body));
-                        self.ctx.info("sending…");
-                    }
+                match compose(&file, &text) {
+                    Ok(body) => self.ctx.send(key, &pr_id, mutation, body),
                     Err(e) => self.ctx.info(format!("cancelled ({e})")),
                 }
             }
@@ -461,6 +520,16 @@ impl App {
         let right = Line::from(right).right_aligned();
         f.render_widget(Paragraph::new(Line::from(" ? help").dark_gray()), bar);
         f.render_widget(right, bar);
+
+        if let Some(d) = &mut self.ctx.draft {
+            let area = ui::centered(f.area(), 90, 16);
+            d.text.set_block(
+                ui::block(draft_title(&d.mutation), true)
+                    .title_bottom(Line::from(" Ctrl-s send · Esc cancel · Ctrl-o $EDITOR ").dark_gray().right_aligned()),
+            );
+            f.render_widget(Clear, area);
+            f.render_widget(&d.text, area);
+        }
 
         if self.help {
             let lines: Vec<Line> = help
@@ -506,10 +575,24 @@ pub fn editor(args: &[&str]) -> Command {
     cmd
 }
 
+fn draft_title(m: &Mutation) -> String {
+    match m {
+        Mutation::AddThread {
+            path, line, start_line, ..
+        } => match start_line {
+            Some(s) => format!("comment {path}:{s}-{line}"),
+            None => format!("comment {path}:{line}"),
+        },
+        Mutation::Reply { .. } => "reply".into(),
+        Mutation::Submit { event, .. } => format!("review: {}", event.to_lowercase().replace('_', " ")),
+        _ => "comment".into(),
+    }
+}
+
 /// Lets the user write a comment; errors when the editor exits non-zero (`:cq`).
-fn compose(file: &PathBuf) -> Result<String> {
+fn compose(file: &PathBuf, text: &str) -> Result<String> {
     std::fs::create_dir_all(file.parent().unwrap())?;
-    std::fs::write(file, "")?;
+    std::fs::write(file, text)?;
     with_terminal_released(&mut editor(&[&file.to_string_lossy()]))?;
     Ok(std::fs::read_to_string(file)?.trim().to_string())
 }

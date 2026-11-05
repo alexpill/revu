@@ -13,7 +13,7 @@ use ratatui::widgets::{Paragraph, Wrap};
 pub const HELP: &[(&str, &str)] = &[
     ("j/k Ctrl-d/u", "scroll"),
     ("g/G", "top / bottom"),
-    ("C", "comment (opens $EDITOR)"),
+    ("C", "comment"),
     ("o", "open in browser"),
     ("Ctrl-r", "refresh"),
     ("q / Esc", "back"),

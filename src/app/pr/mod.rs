@@ -47,7 +47,7 @@ pub const HELP: &[(&str, &str)] = &[
     ("o", "open in browser"),
     ("Ctrl-r", "refresh"),
     ("q / Esc", "back"),
-    ("", "in $EDITOR, :cq cancels"),
+    ("", "comment box: Ctrl-s send, Esc cancel, Ctrl-o $EDITOR"),
 ];
 
 const SUBMIT: &[(char, &str, Option<&str>)] = &[

@@ -21,7 +21,7 @@ they come with.
   background), lockfiles folded.
 - **Reviews like on GitHub**: comment a line or a range, reply, resolve,
   then submit as comment / approve / request changes. Comments are written in
-  your `$EDITOR`.
+  a box inside revu, or in your `$EDITOR`.
 - **Code navigation**: fuzzy-open any file of the PR head, `gd` / `gr` / `K`
   through a language server running on a detached worktree of the PR, jump
   list.
@@ -146,7 +146,8 @@ Press `?` anywhere for the keys of the current screen.
 | `S` | submit review: comment, approve, request changes, or discard |
 | `C` | comment on the PR |
 
-Comments open in `$VISUAL` / `$EDITOR`; quit with `:cq` (non-zero exit) to cancel.
+Comments are written in a box: `Ctrl-s` sends, `Esc` cancels, `Ctrl-o` moves
+the text to `$VISUAL` / `$EDITOR` (quit with `:cq`, a non-zero exit, to cancel).
 
 ## How it works
 
