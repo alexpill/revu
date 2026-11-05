@@ -176,6 +176,14 @@ pub fn load(args: &Args) -> Result<Config> {
             c.key
         );
     }
+    let cmds = &cfg.commands;
+    if let Some(c) = (0..cmds.len()).find_map(|i| cmds[..i].iter().find(|d| d.key == cmds[i].key)) {
+        bail!(
+            "invalid config {}: command key {:?} is used twice",
+            path.display(),
+            c.key
+        );
+    }
     // Run from a clone: remember where it is, and pin it for this run.
     if let Ok(r) = local_repo(Path::new(".")) {
         if let Some(p) = &r.path {
