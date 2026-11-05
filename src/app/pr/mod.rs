@@ -53,6 +53,9 @@ pub const HELP: &[(&str, &str)] = &[
     ("", "comment box: Ctrl-s send, Esc cancel, Ctrl-o $EDITOR"),
 ];
 
+/// Plain keys the PR screen uses on any tab; custom commands can't take them.
+pub const KEYS: &str = "123456789?qoeHLxSCjkgGhlwb0$[]{} zvcarDRKnN/";
+
 const SUBMIT: &[(char, &str, Option<&str>)] = &[
     ('c', "comment", Some("COMMENT")),
     ('a', "approve", Some("APPROVE")),
@@ -402,9 +405,9 @@ impl PrScreen {
         self.picker = Some((Picker::new("locations", items), PickFor::Location(locs)));
     }
 
-    /// Opens the current position in $EDITOR, in the worktree when there is one.
-    fn edit_here(&mut self, ctx: &mut Ctx) {
-        let here = match self.tab {
+    /// Path and 0-based line under the cursor, in the diff or a buffer.
+    fn cursor(&self) -> Option<(String, u32)> {
+        match self.tab {
             FILES_TAB => self
                 .files
                 .as_ref()
@@ -416,8 +419,12 @@ impl PrScreen {
                 .get(t - FIRST_BUFFER)
                 .map(|b| (b.path.clone(), b.cursor as u32)),
             _ => None,
-        };
-        let Some((path, line)) = here else {
+        }
+    }
+
+    /// Opens the current position in $EDITOR, in the worktree when there is one.
+    fn edit_here(&mut self, ctx: &mut Ctx) {
+        let Some((path, line)) = self.cursor() else {
             return ctx.info("nothing to open here");
         };
         let base = match (&self.worktree, &ctx.sources[self.key.0].local) {
@@ -430,6 +437,25 @@ impl PrScreen {
             }
         };
         ctx.open_in_editor(base.join(path), line + 1);
+    }
+
+    fn run_command(&self, key: char, ctx: &mut Ctx) {
+        let (path, line) = self
+            .cursor()
+            .map_or_else(Default::default, |(p, l)| (p, (l + 1).to_string()));
+        let worktree = match &self.worktree {
+            Some(Ok(wt)) => wt.to_string_lossy().into_owned(),
+            _ => String::new(),
+        };
+        let pr = self.key.1.to_string();
+        let cmd = ctx.cfg.commands.iter().find(|c| c.key == key).unwrap().expand(&[
+            ("repo", ctx.repo(self.key.0)),
+            ("pr", &pr),
+            ("path", &path),
+            ("line", &line),
+            ("worktree", &worktree),
+        ]);
+        ctx.run(cmd);
     }
 
     fn open_finder(&mut self, ctx: &mut Ctx) {
@@ -602,6 +628,7 @@ impl PrScreen {
                     ctx.compose(self.key, &id, Mutation::Comment { body: String::new() });
                 }
             }
+            KeyCode::Char(c) if !ctrl && ctx.cfg.commands.iter().any(|cmd| cmd.key == c) => self.run_command(c, ctx),
             _ if self.tab != 0 => {}
             KeyCode::Char('d') if ctrl => self.conv_scroll += 15,
             KeyCode::Char('u') if ctrl => self.conv_scroll = self.conv_scroll.saturating_sub(15),

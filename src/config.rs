@@ -11,6 +11,12 @@
 //!
 //! [lsp]                   # file extension -> server command (overrides the defaults)
 //! rs = ["rust-analyzer"]
+//!
+//! [[commands]]            # PR screen: a key runs a shell command (`sh -c`) in the terminal
+//! key = "X"               # one key, not already taken by the PR screen
+//! run = "claude 'review {path}:{line} in {repo}#{pr}'"
+//! # placeholders, quoted for the shell: {repo} (owner/name), {pr} (number),
+//! # {path} {line} (under the cursor, else empty), {worktree} (PR checkout, else empty)
 //! ```
 
 use crate::cli::Args;
@@ -29,6 +35,8 @@ pub struct Config {
     /// bat theme name for code, e.g. "Nord" or "Catppuccin Mocha".
     pub theme: Option<String>,
     pub clone_dir: Option<PathBuf>,
+    #[serde(default)]
+    pub commands: Vec<CustomCommand>,
 }
 
 impl Config {
@@ -41,6 +49,52 @@ impl Config {
 pub struct RepoConfig {
     pub name: String,
     pub path: Option<PathBuf>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CustomCommand {
+    pub key: char,
+    pub run: String,
+}
+
+impl CustomCommand {
+    /// `run` with each `{name}` replaced by its value, quoted for where it sits
+    /// (bare, '…' or "…"): values come from PRs, so they must never run as code.
+    pub fn expand(&self, vars: &[(&str, &str)]) -> String {
+        let (mut out, mut quote, mut escaped) = (String::new(), None, false);
+        let mut rest = self.run.as_str();
+        while let Some(c) = rest.chars().next() {
+            let var = vars.iter().find(|(n, _)| {
+                rest.strip_prefix('{')
+                    .and_then(|r| r.strip_prefix(n))
+                    .is_some_and(|r| r.starts_with('}'))
+            });
+            if let Some((n, v)) = var.filter(|_| !escaped) {
+                match quote {
+                    None => out += &format!("'{}'", v.replace('\'', r"'\''")),
+                    Some('\'') => out += &v.replace('\'', r"'\''"),
+                    _ => v.chars().for_each(|c| {
+                        if "$`\"\\".contains(c) {
+                            out.push('\\');
+                        }
+                        out.push(c);
+                    }),
+                }
+                rest = &rest[n.len() + 2..];
+                continue;
+            }
+            match (quote, c) {
+                _ if escaped => escaped = false,
+                (None | Some('"'), '\\') => escaped = true,
+                (None, '\'' | '"') => quote = Some(c),
+                (Some(q), _) if q == c => quote = None,
+                _ => {}
+            }
+            out.push(c);
+            rest = &rest[c.len_utf8()..];
+        }
+        out
+    }
 }
 
 pub fn config_path() -> PathBuf {
@@ -115,6 +169,13 @@ pub fn load(args: &Args) -> Result<Config> {
         cfg.theme = Some(theme.clone());
     }
     cfg.clone_dir = cfg.clone_dir.as_deref().map(expand_tilde);
+    if let Some(c) = cfg.commands.iter().find(|c| crate::app::PR_KEYS.contains(c.key)) {
+        bail!(
+            "invalid config {}: command key {:?} is already used by the PR screen",
+            path.display(),
+            c.key
+        );
+    }
     // Run from a clone: remember where it is, and pin it for this run.
     if let Ok(r) = local_repo(Path::new(".")) {
         if let Some(p) = &r.path {
@@ -225,6 +286,32 @@ mod tests {
             Some("a/b")
         );
         assert_eq!(pick_remote("lab\thttps://gitlab.com/x/y (fetch)"), None);
+    }
+
+    #[test]
+    fn command_placeholders() {
+        let evil = "a b'$(echo x)\"`echo y`\\";
+        let vars = [("path", evil), ("line", ""), ("pr", "7")];
+        let run = |run: &str| {
+            CustomCommand {
+                key: 'X',
+                run: run.into(),
+            }
+            .expand(&vars)
+        };
+        assert_eq!(run("echo {pr} {nope} ${HOME}"), "echo '7' {nope} ${HOME}");
+        assert_eq!(run("x {line}"), "x ''");
+        // Bare, in single and in double quotes, the value reaches the command as is.
+        let wrapped = format!("<{evil}>");
+        for (template, want) in [
+            ("printf %s {path}", evil),
+            ("printf %s '<{path}>'", &wrapped),
+            ("printf %s \"<{path}>\"", &wrapped),
+            ("printf %s \\{path}", "{path}"),
+        ] {
+            let out = Command::new("sh").arg("-c").arg(run(template)).output().unwrap();
+            assert_eq!(String::from_utf8_lossy(&out.stdout), want, "{template}");
+        }
     }
 
     #[test]

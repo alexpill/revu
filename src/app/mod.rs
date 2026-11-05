@@ -9,6 +9,8 @@ mod picker;
 mod pr;
 pub mod ui;
 
+pub use pr::KEYS as PR_KEYS;
+
 use crate::config::{self, Config};
 use crate::gh::model::*;
 use crate::gh::mutation::{self, Job, Mutation};
@@ -62,6 +64,8 @@ pub enum External {
     Compose { to: To, text: String },
     /// Open a file at a 1-based line in $EDITOR.
     Open { path: PathBuf, line: u32 },
+    /// A custom command (`sh -c`), then wait for Enter so its output can be read.
+    Run(String),
 }
 
 /// Where a draft goes once written.
@@ -204,6 +208,10 @@ impl Ctx {
 
     pub fn open_in_editor(&mut self, path: PathBuf, line: u32) {
         self.external = Some(External::Open { path, line });
+    }
+
+    pub fn run(&mut self, cmd: String) {
+        self.external = Some(External::Run(cmd));
     }
 
     pub fn ask_claude(&mut self, context: String) {
@@ -534,6 +542,20 @@ impl App {
                     self.ctx.error(e);
                 }
             }
+            External::Run(cmd) => {
+                use std::io::Write;
+                restore_terminal();
+                let status = Command::new("sh").arg("-c").arg(&cmd).status();
+                print!("\n[revu] press Enter to go back");
+                let _ = std::io::stdout().flush();
+                let _ = std::io::stdin().read_line(&mut String::new());
+                init_terminal();
+                match status {
+                    Ok(s) if s.success() => {}
+                    Ok(s) => self.ctx.error(format!("{cmd} exited with {s}")),
+                    Err(e) => self.ctx.error(e),
+                }
+            }
         }
     }
 
@@ -575,10 +597,11 @@ impl App {
         }
 
         if self.help {
-            let lines: Vec<Line> = help
-                .iter()
-                .map(|(k, d)| Line::from(vec![Span::from(format!("{k:>16}  ")).cyan(), Span::from(*d)]))
-                .collect();
+            let line = |k: &str, d: &str| Line::from(vec![format!("{k:>16}  ").cyan(), Span::from(d.to_string())]);
+            let mut lines: Vec<Line> = help.iter().map(|(k, d)| line(k, d)).collect();
+            if matches!(self.stack.last(), Some(Screen::Pr(_))) {
+                lines.extend(self.ctx.cfg.commands.iter().map(|c| line(&c.key.to_string(), &c.run)));
+            }
             let area = ui::centered(f.area(), 76, lines.len() as u16 + 2);
             f.render_widget(Clear, area);
             f.render_widget(Paragraph::new(lines).block(ui::block("keys", true)), area);

@@ -22,7 +22,7 @@ the current version are listed at the end.
       (e.g. `claude -p`) to explain it or pre-review it, and show the answer in
       a panel or as draft comments. Natural hook: a new `External` variant that
       runs a command with the terminal, or a background job feeding a popup.
-- [ ] **Custom commands** in the config (key + shell command with placeholders
+- [x] **Custom commands** in the config (key + shell command with placeholders
       such as `{repo}`, `{pr}`, `{path}`, `{line}`): the first step towards
       plugins, and enough to wire AI tools without hard-coding one.
 

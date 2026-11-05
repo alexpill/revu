@@ -114,7 +114,18 @@ name = "owner/other-repo"
 [lsp]                          # optional: file extension -> server command
 ts = ["typescript-language-server", "--stdio"]
 nix = ["nixd"]
+
+[[commands]]                   # optional: on the PR screen, a key runs a shell command
+key = "X"                      # one key, not one the PR screen already uses
+run = "claude 'review {path}:{line} in {repo}#{pr}'"
 ```
+
+A custom command runs with `sh -c`, in the terminal, then waits for Enter
+before going back to `revu`. Placeholders are quoted for the shell (also
+inside `'…'` or `"…"`): `{repo}` (owner/name), `{pr}` (number), `{path}` and
+`{line}` (under the cursor, empty if none), `{worktree}` (local checkout of
+the PR head, empty until a language-server feature created it). The keys show
+up in the `?` help.
 
 Local clones `revu` learns about (run from a clone, or cloned with `c`) are
 remembered in `$XDG_STATE_HOME/revu/links` (usually
@@ -176,6 +187,7 @@ Press `?` anywhere for the keys of the current screen.
 | `S` | submit review: comment, approve, request changes, or discard |
 | `C` | comment on the PR |
 | `a` | line, range or thread: ask Claude Code (revu started by `/revu`) |
+| your `[[commands]]` keys | run your custom commands |
 
 Comments are written in a box: `Ctrl-s` sends, `Esc` cancels, `Ctrl-o` moves
 the text to `$VISUAL` / `$EDITOR` (quit with `:cq`, a non-zero exit, to cancel).
