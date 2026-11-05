@@ -9,7 +9,7 @@ use crate::gh::mutation::Mutation;
 use crate::highlight::{Highlighter, StyledLine};
 use ratatui::Frame;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use ratatui::layout::{Constraint, Layout, Rect};
+use ratatui::layout::{Constraint, Layout, Margin, Position, Rect};
 use ratatui::style::{Color, Modifier, Style, Stylize};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{List, ListItem, ListState, Paragraph};
@@ -98,6 +98,8 @@ pub struct FilesView {
     rows: Vec<Row>,
     height: usize,
     list: ListState,
+    list_area: Rect,
+    diff_area: Rect,
 }
 
 impl FilesView {
@@ -115,6 +117,8 @@ impl FilesView {
             rows: Vec::new(),
             height: 20,
             list: ListState::default(),
+            list_area: Rect::default(),
+            diff_area: Rect::default(),
         }
     }
 
@@ -369,6 +373,23 @@ impl FilesView {
         );
     }
 
+    /// A file selects it (or focuses the diff if already selected); the diff moves the cursor there.
+    pub fn on_click(&mut self, pos: Position) {
+        self.confirm_delete = None;
+        self.pending_g = false;
+        if let Some(i) = ui::row_at(self.list_area, self.list.offset(), pos).filter(|&i| i < self.files.len()) {
+            self.focus_diff = i == self.sel;
+            if i != self.sel {
+                self.select(i);
+            }
+        } else if let Some(r) = ui::row_at(self.diff_area, self.scroll, pos).filter(|&r| r < self.rows.len()) {
+            self.focus_diff = true;
+            self.cursor = r;
+            let x = (pos.x - self.diff_area.x) as usize;
+            self.col = x.saturating_sub(GUTTER).min(self.line_chars().len().saturating_sub(1));
+        }
+    }
+
     pub fn render(&mut self, f: &mut Frame, area: Rect, detail: Option<&PrDetail>, hl: &Highlighter) {
         let list_w = (area.width / 3).clamp(24, 56);
         let [list_area, diff_area] = Layout::horizontal([Constraint::Length(list_w), Constraint::Fill(1)]).areas(area);
@@ -414,6 +435,7 @@ impl FilesView {
             .collect();
         let title = format!("files {}/{} viewed", self.viewed_count(), self.files.len());
         self.list.select(Some(self.sel));
+        self.list_area = area.inner(Margin::new(1, 1));
         let list = List::new(items)
             .highlight_style(SELECTED)
             .block(ui::block(title, !self.focus_diff));
@@ -502,6 +524,7 @@ impl FilesView {
         let inner = block.inner(area);
         f.render_widget(block, area);
 
+        self.diff_area = inner;
         self.rows = self.build_rows(detail, hl, inner.width as usize);
         self.height = inner.height as usize;
         self.cursor = self.cursor.min(self.rows.len().saturating_sub(1));

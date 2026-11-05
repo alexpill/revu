@@ -18,10 +18,11 @@ use anyhow::Result;
 use ratatui::DefaultTerminal;
 use ratatui::Frame;
 use ratatui::crossterm::event::{
-    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseEventKind,
+    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton,
+    MouseEventKind,
 };
 use ratatui::crossterm::execute;
-use ratatui::layout::{Constraint, Layout};
+use ratatui::layout::{Constraint, Layout, Position};
 use ratatui::style::Stylize;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Clear, Paragraph};
@@ -79,6 +80,12 @@ impl Screen {
         match self {
             Screen::Issue(s) => s.on_key(k, ctx),
             Screen::Pr(s) => s.on_key(k, ctx),
+        }
+    }
+    fn on_click(&mut self, pos: Position, ctx: &mut Ctx) -> Action {
+        match self {
+            Screen::Issue(_) => Action::None,
+            Screen::Pr(s) => s.on_click(pos, ctx),
         }
     }
     fn on_msg(&mut self, msg: Msg, ctx: &mut Ctx) -> Option<Msg> {
@@ -241,6 +248,9 @@ impl App {
                     // The wheel scrolls whatever has focus, like j/k.
                     Event::Mouse(m) if m.kind == MouseEventKind::ScrollDown => self.on_key(KeyCode::Down.into()),
                     Event::Mouse(m) if m.kind == MouseEventKind::ScrollUp => self.on_key(KeyCode::Up.into()),
+                    Event::Mouse(m) if m.kind == MouseEventKind::Down(MouseButton::Left) => {
+                        self.on_click(Position::new(m.column, m.row))
+                    }
                     // Motion reports flood in while the pointer moves; don't redraw for them.
                     Event::Mouse(_) => {
                         timeout = Duration::ZERO;
@@ -281,6 +291,23 @@ impl App {
             Some(s) => s.on_key(k, &mut self.ctx),
             None => self.main.on_key(k, &mut self.ctx),
         };
+        self.apply(action);
+    }
+
+    fn on_click(&mut self, pos: Position) {
+        if self.help {
+            self.help = false;
+            return;
+        }
+        self.ctx.status = None;
+        let action = match self.stack.last_mut() {
+            Some(s) => s.on_click(pos, &mut self.ctx),
+            None => self.main.on_click(pos, &mut self.ctx),
+        };
+        self.apply(action);
+    }
+
+    fn apply(&mut self, action: Action) {
         match action {
             Action::None => {}
             Action::Push(s) => self.stack.push(s),

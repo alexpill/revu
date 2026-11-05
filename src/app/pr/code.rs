@@ -7,7 +7,7 @@ use crate::app::ui::{self, DIM, SELECTED};
 use crate::highlight::{Highlighter, StyledLine};
 use ratatui::Frame;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use ratatui::layout::{Constraint, Layout, Rect};
+use ratatui::layout::{Constraint, Layout, Position, Rect};
 use ratatui::style::Stylize;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
@@ -23,6 +23,7 @@ pub struct Buffer {
     pub col: usize,
     scroll: usize,
     height: usize,
+    code_area: Rect,
     pending_g: bool,
     /// `/` prompt being typed, and the last search.
     input: Option<String>,
@@ -38,6 +39,7 @@ impl Buffer {
             cursor,
             col,
             scroll: 0,
+            code_area: Rect::default(),
             height: 20,
             pending_g: false,
             input: None,
@@ -152,6 +154,20 @@ impl Buffer {
         Outcome::Handled
     }
 
+    /// Moves the cursor to the clicked line and column.
+    pub fn on_click(&mut self, pos: Position) {
+        if self.input.is_some() {
+            return;
+        }
+        self.pending_g = false;
+        if let Some(r) = ui::row_at(self.code_area, self.scroll, pos).filter(|&r| r < self.len()) {
+            self.cursor = r;
+            let gutter = self.len().to_string().len().max(3) + 1;
+            let x = (pos.x - self.code_area.x) as usize;
+            self.col = x.saturating_sub(gutter).min(self.chars().len().saturating_sub(1));
+        }
+    }
+
     pub fn render(&mut self, f: &mut Frame, area: Rect) {
         let block = ui::block(&self.path, true);
         let inner = block.inner(area);
@@ -169,6 +185,7 @@ impl Buffer {
             None => (inner, None),
         };
         self.height = code_area.height as usize;
+        self.code_area = code_area;
         self.cursor = self.cursor.min(lines.len().saturating_sub(1));
         if self.cursor < self.scroll {
             self.scroll = self.cursor;

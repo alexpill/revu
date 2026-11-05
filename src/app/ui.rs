@@ -1,6 +1,6 @@
 //! Small rendering helpers shared by screens.
 
-use ratatui::layout::{Constraint, Flex, Layout, Rect};
+use ratatui::layout::{Constraint, Flex, Layout, Position, Rect};
 use ratatui::style::{Color, Style, Stylize};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType};
@@ -33,6 +33,25 @@ pub fn centered(area: Rect, w: u16, h: u16) -> Rect {
         .flex(Flex::Center)
         .areas(area);
     area
+}
+
+/// Where each title lands when drawn by `Tabs` (one-space padding, empty divider).
+pub fn tab_rects(titles: &[Line], area: Rect) -> Vec<Rect> {
+    let mut x = area.x;
+    titles
+        .iter()
+        .map(|t| {
+            let w = t.width() as u16 + 2;
+            let r = Rect::new(x, area.y, w, 1).intersection(area);
+            x = x.saturating_add(w);
+            r
+        })
+        .collect()
+}
+
+/// Index of the row under `pos` in a one-line-per-row view starting at row `offset`.
+pub fn row_at(area: Rect, offset: usize, pos: Position) -> Option<usize> {
+    area.contains(pos).then(|| offset + (pos.y - area.y) as usize)
 }
 
 /// Check-rollup / check-run state as a one-cell glyph.
@@ -116,5 +135,22 @@ mod tests {
     fn timestamps() {
         assert_eq!(super::parse_ts("1970-01-02T00:00:01Z"), Some(86401));
         assert_eq!(super::parse_ts("2024-03-01T00:00:00Z"), Some(1_709_251_200));
+    }
+
+    #[test]
+    fn tab_rects_match_tabs_widget() {
+        use ratatui::buffer::Buffer;
+        use ratatui::layout::Rect;
+        use ratatui::text::Line;
+        use ratatui::widgets::{Tabs, Widget};
+        let titles = vec![Line::from(" 1 home "), Line::from(" 2 a/b 12 "), Line::from(" 3 x ")];
+        let area = Rect::new(3, 1, 40, 1);
+        let mut buf = Buffer::empty(Rect::new(0, 0, 50, 2));
+        Tabs::new(titles.clone()).select(1).divider("").render(area, &mut buf);
+        let rects = super::tab_rects(&titles, area);
+        let text = |r: Rect| (r.x..r.right()).map(|x| buf[(x, r.y)].symbol()).collect::<String>();
+        assert_eq!(text(rects[0]), "  1 home  ");
+        assert_eq!(text(rects[1]), "  2 a/b 12  ");
+        assert_eq!(text(rects[2]), "  3 x  ");
     }
 }

@@ -14,7 +14,7 @@ use code::Buffer;
 use files::FilesView;
 use ratatui::Frame;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use ratatui::layout::{Constraint, Layout, Rect};
+use ratatui::layout::{Constraint, Layout, Position, Rect};
 use ratatui::style::{Style, Stylize};
 use ratatui::text::Line;
 use ratatui::widgets::{Clear, Paragraph, Tabs, Wrap};
@@ -26,6 +26,7 @@ pub const HELP: &[(&str, &str)] = &[
     ("1-9 H/L", "tabs: conversation, files, open buffers"),
     ("j/k Ctrl-d/u g/G", "scroll / move"),
     ("Tab", "files: switch list / diff"),
+    ("click / wheel", "tab, file, cursor / scroll"),
     ("[ ]", "previous / next file"),
     ("{ }", "previous / next hunk"),
     ("Space", "toggle viewed (and go to next unviewed)"),
@@ -130,6 +131,8 @@ pub struct PrScreen {
     /// Asked while the server was still loading: re-sent once it is ready.
     retry: Option<Ask>,
     hover: Option<String>,
+    /// As last rendered, for clicks.
+    tab_rects: Vec<Rect>,
 }
 
 impl PrScreen {
@@ -152,6 +155,7 @@ impl PrScreen {
             warming: HashMap::new(),
             retry: None,
             hover: None,
+            tab_rects: Vec::new(),
         };
         s.load(ctx);
         s.load_files(ctx);
@@ -599,6 +603,27 @@ impl PrScreen {
         Action::None
     }
 
+    pub fn on_click(&mut self, pos: Position, _ctx: &mut Ctx) -> Action {
+        // A click dismisses popups rather than reaching what's under them.
+        if self.hover.take().is_some() || std::mem::take(&mut self.submit_menu) || self.picker.is_some() {
+            return Action::None;
+        }
+        if let Some(t) = self.tab_rects.iter().position(|r| r.contains(pos)) {
+            self.tab = t;
+            return Action::None;
+        }
+        match self.tab {
+            0 => {}
+            FILES_TAB => {
+                if let Some(Ok(view)) = &mut self.files {
+                    view.on_click(pos);
+                }
+            }
+            t => self.buffers[t - FIRST_BUFFER].on_click(pos),
+        }
+        Action::None
+    }
+
     pub fn render(&mut self, f: &mut Frame, area: Rect, ctx: &Ctx) {
         let [head, tabs_area, body] =
             Layout::vertical([Constraint::Length(1), Constraint::Length(1), Constraint::Fill(1)]).areas(area);
@@ -636,6 +661,7 @@ impl PrScreen {
             let name = b.path.rsplit('/').next().unwrap_or(&b.path);
             titles.push(Line::from(format!(" {} {name} ", i + FIRST_BUFFER + 1)));
         }
+        self.tab_rects = ui::tab_rects(&titles, tabs_area);
         let tabs = Tabs::new(titles)
             .select(self.tab)
             .divider("")

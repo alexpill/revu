@@ -105,7 +105,6 @@ Make buffers and the diff feel like Neovim, still without editing:
       in browser, check out, custom commands…), each action showing its key
       so the palette also teaches the shortcuts. Builds on the `/` search.
 - [ ] Configurable key bindings.
-- [ ] Mouse support.
 - [ ] Remember UI state (last tab, filters) between runs.
 - [ ] Plugin system beyond custom commands.
 - [ ] Publish on crates.io and nixpkgs.

@@ -8,7 +8,7 @@ use crate::gh::{self, model::*};
 use anyhow::Result;
 use ratatui::Frame;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use ratatui::layout::{Constraint, Layout, Rect};
+use ratatui::layout::{Constraint, Layout, Margin, Position, Rect};
 use ratatui::style::{Style, Stylize};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Cell, Paragraph, Row, Table, TableState, Tabs};
@@ -17,6 +17,7 @@ pub const HELP: &[(&str, &str)] = &[
     ("1-9 H/L Tab", "switch tab (1 = home)"),
     ("j/k g/G", "move"),
     ("Enter", "open PR / issue"),
+    ("click / wheel", "select (again to open) / move"),
     ("p / i", "repo tab: pull requests / issues"),
     (
         "r a m d",
@@ -103,6 +104,9 @@ pub struct MainScreen {
     repos: Vec<RepoTab>,
     /// Text being typed after `/`.
     input: Option<String>,
+    /// As last rendered, for clicks.
+    tab_rects: Vec<Rect>,
+    table_area: Rect,
 }
 
 impl MainScreen {
@@ -126,6 +130,8 @@ impl MainScreen {
             home_filter: Filter::All,
             repos,
             input: None,
+            tab_rects: Vec::new(),
+            table_area: Rect::default(),
         };
         s.refresh(ctx);
         s
@@ -377,6 +383,28 @@ impl MainScreen {
         Action::None
     }
 
+    /// A tab switches to it, a row selects it, the selected row opens.
+    pub fn on_click(&mut self, pos: Position, ctx: &mut Ctx) -> Action {
+        if self.input.is_some() {
+            return Action::None;
+        }
+        if let Some(t) = self.tab_rects.iter().position(|r| r.contains(pos)) {
+            self.tab = t;
+            return Action::None;
+        }
+        let me = ctx.viewer.clone();
+        let area = self.table_area;
+        let (state, n) = self.cursor(&me);
+        match ui::row_at(area, state.offset(), pos).filter(|&r| r < n) {
+            Some(r) if state.selected() == Some(r) => self.on_key(KeyCode::Enter.into(), ctx),
+            Some(r) => {
+                state.select(Some(r));
+                Action::None
+            }
+            None => Action::None,
+        }
+    }
+
     pub fn render(&mut self, f: &mut Frame, area: Rect, ctx: &Ctx) {
         let [tabs_area, body] = Layout::vertical([Constraint::Length(1), Constraint::Fill(1)]).areas(area);
         let mut titles = vec![Line::from(" 1 home ")];
@@ -391,6 +419,8 @@ impl MainScreen {
                 " ".into(),
             ]));
         }
+        self.tab_rects = ui::tab_rects(&titles, tabs_area);
+        self.table_area = Rect::default();
         f.render_widget(
             Tabs::new(titles)
                 .select(self.tab)
@@ -507,6 +537,7 @@ impl MainScreen {
             ),
             true,
         ));
+        self.table_area = bottom.inner(Margin::new(1, 1));
         f.render_stateful_widget(table, bottom, &mut self.home);
     }
 
@@ -557,6 +588,7 @@ impl MainScreen {
             .row_highlight_style(SELECTED)
             .block(ui::block(title, true));
         let area = self.render_input(f, area);
+        self.table_area = area.inner(Margin::new(1, 1));
         f.render_stateful_widget(table, area, &mut self.repos[i].prs);
     }
 
@@ -603,6 +635,7 @@ impl MainScreen {
             .row_highlight_style(SELECTED)
             .block(ui::block(title, true));
         let area = self.render_input(f, area);
+        self.table_area = area.inner(Margin::new(1, 1));
         f.render_stateful_widget(table, area, &mut self.repos[i].issue_sel);
     }
 
