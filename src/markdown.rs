@@ -13,14 +13,14 @@ pub fn render(src: &str, hl: &Highlighter) -> Vec<Line<'static>> {
     let mut fence: Option<(String, Vec<&str>)> = None;
     for raw in src.lines() {
         let trimmed = raw.trim_start();
-        if trimmed.starts_with("```") {
+        if let Some(info) = trimmed.strip_prefix("```") {
             match fence.take() {
                 Some((lang, code)) => {
                     for spans in hl.token(&lang, code) {
                         out.push(Line::from([vec![Span::raw("  ")], spans].concat()));
                     }
                 }
-                None => fence = Some((trimmed[3..].trim().to_string(), Vec::new())),
+                None => fence = Some((info.trim().to_string(), Vec::new())),
             }
             continue;
         }

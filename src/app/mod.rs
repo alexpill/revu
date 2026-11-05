@@ -36,6 +36,8 @@ use std::time::Duration;
 /// (index of the repo in `Ctx::sources`, PR or issue number)
 pub type Key = (usize, u64);
 
+// Messages are moved once through a channel, so boxing the big results buys nothing.
+#[allow(clippy::large_enum_variant)]
 pub enum Msg {
     /// Search results for a view of the main screen.
     Activity(usize, Result<Activity>),
@@ -89,7 +91,7 @@ pub enum Action {
 }
 
 pub enum Screen {
-    Issue(issue::IssueScreen),
+    Issue(Box<issue::IssueScreen>),
     Pr(Box<pr::PrScreen>),
 }
 

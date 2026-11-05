@@ -10,7 +10,8 @@ the current version are listed at the end.
       changes), discard and PR comments are implemented against the GitHub
       GraphQL API but not exercised end to end yet. Viewed toggles, adding a
       line comment to the pending review and deleting it have been.
-- [ ] **CI for this repo**: `cargo test`, `cargo clippy`, `nix build` on push.
+- [x] **CI for this repo**: `nix build` (with `cargo test`), `cargo clippy`
+      and `cargo fmt --check` on push and pull requests.
 - [ ] **Binary cache** (Cachix, pushed from CI and declared in the flake's
       `nixConfig`) so `nix run` downloads the binary instead of a Rust
       toolchain and a build.

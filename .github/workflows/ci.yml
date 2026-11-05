@@ -1,0 +1,17 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+      # The package's checkPhase runs `cargo test`.
+      - run: nix build -L
+      - run: nix develop -c cargo clippy --all-targets -- -D warnings
+      - run: nix develop -c cargo fmt --check

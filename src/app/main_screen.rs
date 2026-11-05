@@ -339,7 +339,7 @@ impl MainScreen {
                     }
                 }
                 _ => match self.selected_item(ctx) {
-                    Some((false, key)) => return Action::Push(Screen::Issue(IssueScreen::open(key, ctx))),
+                    Some((false, key)) => return Action::Push(Screen::Issue(Box::new(IssueScreen::open(key, ctx)))),
                     Some((true, key)) => return Action::Push(Screen::Pr(Box::new(PrScreen::open(key, ctx)))),
                     None => {}
                 },
