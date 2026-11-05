@@ -1,4 +1,4 @@
-//! The `?` popup: the current screen's keys, filtered as you type.
+//! The `?` popup: the current screen's keys, filtered with `/`.
 //!
 //! Lines are (key, description); an empty key makes the description a section title.
 
@@ -13,6 +13,8 @@ use ratatui::widgets::{Clear, Paragraph, Scrollbar, ScrollbarOrientation, Scroll
 pub struct Help {
     lines: Vec<(String, String)>,
     query: String,
+    /// Typing goes to the query.
+    searching: bool,
     scroll: u16,
 }
 
@@ -21,6 +23,7 @@ impl Help {
         Self {
             lines,
             query: String::new(),
+            searching: false,
             scroll: 0,
         }
     }
@@ -28,22 +31,27 @@ impl Help {
     /// False once the popup should close.
     pub fn on_key(&mut self, k: KeyEvent) -> bool {
         let ctrl = k.modifiers.contains(KeyModifiers::CONTROL);
+        let query = self.query.clone();
         match k.code {
-            KeyCode::Esc | KeyCode::Enter | KeyCode::Char('?') => return false,
-            KeyCode::Down => self.scroll = self.scroll.saturating_add(1),
-            KeyCode::Up => self.scroll = self.scroll.saturating_sub(1),
+            KeyCode::Esc | KeyCode::Enter if self.searching => self.searching = false,
+            KeyCode::Char('u') if self.searching && ctrl => self.query.clear(),
+            KeyCode::Char(c) if self.searching && !ctrl => self.query.push(c),
+            KeyCode::Backspace if self.searching => _ = self.query.pop(),
+            KeyCode::Char('/') => self.searching = true,
+            KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q' | '?') => return false,
+            KeyCode::Down | KeyCode::Char('j') => self.scroll = self.scroll.saturating_add(1),
+            KeyCode::Up | KeyCode::Char('k') => self.scroll = self.scroll.saturating_sub(1),
             KeyCode::PageDown => self.scroll = self.scroll.saturating_add(10),
+            KeyCode::Char('d') if ctrl => self.scroll = self.scroll.saturating_add(10),
             KeyCode::PageUp => self.scroll = self.scroll.saturating_sub(10),
-            KeyCode::Char('u') if ctrl => self.query.clear(),
-            KeyCode::Char(c) if !ctrl => self.query.push(c),
-            KeyCode::Backspace => _ = self.query.pop(),
-            _ => return true,
+            KeyCode::Char('u') if ctrl => self.scroll = self.scroll.saturating_sub(10),
+            KeyCode::Char('g') => self.scroll = 0,
+            // Clamped to the bottom when drawn.
+            KeyCode::Char('G') => self.scroll = u16::MAX,
+            _ => {}
         }
         // A new query starts from the top.
-        if !matches!(
-            k.code,
-            KeyCode::Down | KeyCode::Up | KeyCode::PageDown | KeyCode::PageUp
-        ) {
+        if self.query != query {
             self.scroll = 0;
         }
         true
@@ -55,9 +63,12 @@ impl Help {
         let area = ui::centered(f.area(), 80, full + 4);
         let rows = rows(&filter(&self.lines, &self.query));
         let block = ui::block("keys", true).title_bottom(
-            Line::from(" type to filter · ↑↓ PgUp/PgDn scroll · Esc close ")
-                .dark_gray()
-                .right_aligned(),
+            Line::from(match self.searching {
+                true => " Ctrl-u clear · ↑↓ scroll · Esc back ",
+                false => " / search · j/k Ctrl-d/u g/G scroll · Esc close ",
+            })
+            .dark_gray()
+            .right_aligned(),
         );
         let inner = block.inner(area);
         let [search, body] = [
@@ -70,9 +81,10 @@ impl Help {
         ];
         f.render_widget(Clear, area);
         f.render_widget(block, area);
-        let search_line = match self.query.is_empty() {
-            true => Line::from(" / type to filter by key or description").dark_gray(),
-            false => Line::from(vec![" / ".dark_gray(), Span::from(self.query.as_str()), "▏".cyan()]),
+        let search_line = match (self.searching, self.query.is_empty()) {
+            (false, true) => Line::from(" / press / to filter by key or description").dark_gray(),
+            (false, false) => Line::from(vec![" / ".dark_gray(), Span::from(self.query.as_str())]),
+            (true, _) => Line::from(vec![" / ".cyan(), Span::from(self.query.as_str()), "▏".cyan()]),
         };
         f.render_widget(search_line, search);
         if rows.is_empty() {
@@ -157,5 +169,20 @@ mod tests {
         assert_eq!(keys("j/"), ["", "j/k"]);
         // Section titles alone don't match.
         assert_eq!(keys("move"), Vec::<&str>::new());
+    }
+
+    #[test]
+    fn slash_searches_and_esc_goes_back_before_closing() {
+        use ratatui::crossterm::event::KeyCode;
+        let mut h = super::Help::new(Vec::new());
+        // While searching, q and ? are text.
+        for k in [KeyCode::Char('/'), KeyCode::Char('q'), KeyCode::Char('?')] {
+            assert!(h.on_key(k.into()));
+        }
+        assert_eq!(h.query, "q?");
+        assert!(h.on_key(KeyCode::Esc.into()));
+        // The filter stays; the next Esc closes.
+        assert_eq!(h.query, "q?");
+        assert!(!h.on_key(KeyCode::Esc.into()));
     }
 }

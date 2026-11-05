@@ -126,7 +126,7 @@ Make buffers and the diff feel like Neovim, still without editing:
 
 ## Platform
 
-- [x] Help popup (`?`) in sections, filtered as you type, scrollable.
+- [x] Help popup (`?`) in sections, filtered with `/`, scrollable.
 - [ ] **Command palette** (`Ctrl-k`, or `Ctrl-p`/`:` if those fit better):
       one fuzzy prompt over the whole context (repos, PRs, issues, files of
       the open PR, comments) and over actions (approve, submit review, open

@@ -150,7 +150,7 @@ sends, and a crash shows the end of its error output.
 ## Keys
 
 Press `?` anywhere for the keys of the current screen, grouped by section;
-type to filter them by key or description, `Esc` closes.
+`/` filters them by key or description, `Esc` closes.
 
 **Home**
 
