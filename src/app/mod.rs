@@ -35,7 +35,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::mpsc::{Receiver, Sender, channel};
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 /// (index of the repo in `Ctx::sources`, PR or issue number)
 pub type Key = (usize, u64);
@@ -415,6 +415,8 @@ impl App {
                 self.on_msg(msg);
                 dirty = true;
             }
+            // Keeps the spinner turning while requests are in flight.
+            dirty |= self.ctx.inflight > 0;
             if let Some(ext) = self.ctx.external.take() {
                 self.run_external(ext, terminal);
                 terminal.clear()?;
@@ -617,7 +619,9 @@ impl App {
 
         let mut right = Vec::new();
         if self.ctx.inflight > 0 {
-            right.push("⟳ ".yellow());
+            const FRAMES: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+            let ms = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap_or_default().as_millis();
+            right.push(format!("{} ", FRAMES[(ms / 80 % 10) as usize]).yellow());
         }
         if let Some((s, err)) = &self.ctx.status {
             right.push(if *err { s.clone().red() } else { s.clone().green() });
