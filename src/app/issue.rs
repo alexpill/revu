@@ -58,7 +58,10 @@ impl IssueScreen {
         match k.code {
             KeyCode::Char('q') | KeyCode::Esc => return Action::Pop,
             KeyCode::Char('?') => return Action::Help,
-            KeyCode::Char('r') if ctrl => self.load(ctx),
+            KeyCode::Char('r') if ctrl => {
+                self.load(ctx);
+                ctx.refreshing();
+            }
             KeyCode::Char('d') if ctrl => self.scroll += 15,
             KeyCode::Char('u') if ctrl => self.scroll = self.scroll.saturating_sub(15),
             KeyCode::Char('j') | KeyCode::Down => self.scroll += 1,

@@ -337,7 +337,10 @@ impl MainScreen {
             KeyCode::Char('q') => return Action::Quit,
             KeyCode::Esc => self.text.clear(),
             KeyCode::Char('?') => return Action::Help,
-            KeyCode::Char('r') if ctrl => self.load(ctx),
+            KeyCode::Char('r') if ctrl => {
+                self.load(ctx);
+                ctx.refreshing();
+            }
             KeyCode::Tab | KeyCode::Char('L') => self.set_tab((self.tab + 1) % TABS.len()),
             KeyCode::BackTab | KeyCode::Char('H') => self.set_tab((self.tab + TABS.len() - 1) % TABS.len()),
             KeyCode::Char(c @ '1'..='3') => self.set_tab(c as usize - '1' as usize),

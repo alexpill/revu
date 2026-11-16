@@ -619,6 +619,7 @@ impl PrScreen {
             KeyCode::Char('r') if ctrl => {
                 self.load(ctx);
                 self.load_files(ctx);
+                ctx.refreshing();
             }
             KeyCode::Char('o') => ctx.browse(self.key),
             KeyCode::Char('e') if !ctrl => self.edit_here(ctx),

@@ -37,6 +37,8 @@ use std::process::Command;
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::time::{Duration, SystemTime};
 
+const REFRESHING: &str = "refreshing…";
+
 /// (index of the repo in `Ctx::sources`, PR or issue number)
 pub type Key = (usize, u64);
 
@@ -237,6 +239,11 @@ impl Ctx {
 
     pub fn clear_status(&mut self) {
         self.status = None;
+    }
+
+    /// Shown until every request in flight has answered.
+    pub fn refreshing(&mut self) {
+        self.info(REFRESHING);
     }
 
     pub fn info(&mut self, s: impl Into<String>) {
@@ -530,6 +537,9 @@ impl App {
     fn on_msg(&mut self, msg: Msg) {
         if !matches!(msg, Msg::Lsp(..)) {
             self.ctx.inflight = self.ctx.inflight.saturating_sub(1);
+            if self.ctx.inflight == 0 && self.ctx.status.as_ref().is_some_and(|(s, _)| s == REFRESHING) {
+                self.ctx.clear_status();
+            }
         }
         let msg = match msg {
             Msg::Activity(view, r) => return self.main.on_activity(view, r, &mut self.ctx),
