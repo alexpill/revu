@@ -630,7 +630,10 @@ impl App {
         let mut right = Vec::new();
         if self.ctx.inflight > 0 {
             const FRAMES: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-            let ms = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap_or_default().as_millis();
+            let ms = SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis();
             right.push(format!("{} ", FRAMES[(ms / 80 % 10) as usize]).yellow());
         }
         if let Some((s, err)) = &self.ctx.status {
